@@ -22,11 +22,11 @@ const IS_EMBEDDED = window !== window.top;
 
 // Ordered from most specific to least — first match wins on click
 const CLICK_SECTION_MAP: Array<{ selector: string; sectionId: BuilderSectionId }> = [
-  { selector: '#sobre-nos', sectionId: 'benefits' },
-  { selector: '#forma-pagamento', sectionId: 'benefits' },
+  { selector: '#forma-pagamento', sectionId: 'financing' },
+  { selector: '#sobre-nos', sectionId: 'proofBar' },
   { selector: '#casos', sectionId: 'showcase' },
-  { selector: '#como-funciona', sectionId: 'media' },
-  { selector: '#cuidamos-tudo', sectionId: 'media' },
+  { selector: '#cuidamos-tudo', sectionId: 'fullService' },
+  { selector: '#como-funciona', sectionId: 'howItWorks' },
   { selector: '#contato', sectionId: 'cta' },
   { selector: 'footer', sectionId: 'footer' },
   { selector: 'header', sectionId: 'global' },
@@ -37,7 +37,11 @@ const SECTION_SELECTORS: Record<BuilderSectionId, string[]> = {
   global: ['section', 'header'],
   seo: ['section', 'header'],
   hero: ['section'],
-  benefits: ['#sobre-nos', '#forma-pagamento'],
+  financing: ['#forma-pagamento'],
+  benefits: ['#sobre-nos'],
+  proofBar: ['#sobre-nos'],
+  fullService: ['#cuidamos-tudo'],
+  howItWorks: ['#como-funciona'],
   showcase: ['#casos'],
   media: ['#como-funciona', '#cuidamos-tudo', '#sobre-nos'],
   cta: ['#contato'],

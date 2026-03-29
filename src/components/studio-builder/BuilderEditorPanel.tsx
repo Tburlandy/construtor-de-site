@@ -30,6 +30,8 @@ interface BuilderEditorPanelProps {
   onCreateLayout?: () => void;
 }
 
+const ACCORDION_SCROLL_CORRECTION_DELAY_MS = 240;
+
 function clampToPositiveInteger(value: string): number {
   const parsed = Number.parseInt(value, 10);
   if (Number.isNaN(parsed) || parsed < 0) {
@@ -79,6 +81,86 @@ function formatPageCountLabel(pageCount: number): string {
   return `${pageCount} pág`;
 }
 
+const DEFAULT_HERO_STATS = [
+  { value: '+1000', label: 'Projetos instalados' },
+  { value: '25 anos', label: 'de garantia nas placas' },
+  { value: '100%', label: 'de satisfação no Google' },
+  { value: '6 anos', label: 'No mercado' },
+];
+
+const DEFAULT_FINANCING_ITEMS = [
+  { title: '120 dias para começar', description: 'Você só começa a pagar em 4 meses' },
+  { title: 'Até 120 parcelas', description: 'Parcelas que cabem no seu bolso com taxas reduzidas' },
+  { title: 'Zero de entrada', description: 'Comece a economizar sem desembolso inicial' },
+];
+
+const DEFAULT_PROOFBAR_CARDS = [
+  {
+    title: '100% de satisfação no Google',
+    description:
+      'São 409 avaliações, não são 10, 20! 409 clientes fizeram questão de comentar a experiência 5 estrelas.',
+  },
+  {
+    title: 'Garantia de 25 anos das placas solares',
+    description: 'Proteção do seu investimento',
+  },
+  {
+    title: 'Instalação Rápida',
+    description: 'Em poucos dias você terá seu sistema funcionando',
+  },
+  {
+    title: 'Líder em painéis solares em {{city}}',
+    description: 'Referência em qualidade e atendimento',
+  },
+  {
+    title: 'Satisfação Garantida',
+    description: 'Garantimos o sistema em plena operação',
+  },
+  {
+    title: '+ DE 1000',
+    description: 'Clientes atendidos com excelência',
+  },
+];
+
+const DEFAULT_FULL_SERVICE_ITEMS = [
+  { title: 'Projeto Completo', description: 'Dimensionamento técnico e análise de viabilidade' },
+  { title: 'Instalação Profissional', description: 'Equipe certificada com NR10 e NR35' },
+  { title: 'Homologação ANEEL', description: 'Cuidamos de toda a documentação e aprovação' },
+  { title: 'Suporte Completo', description: 'Atendimento local e monitoramento contínuo' },
+];
+
+const DEFAULT_HOW_IT_WORKS_STEPS = [
+  {
+    number: '01',
+    title: 'Captação Solar',
+    description:
+      'Os painéis fotovoltaicos captam a energia solar e a transformam em corrente elétrica contínua (DC)',
+  },
+  {
+    number: '02',
+    title: 'Conversão',
+    description:
+      'A corrente é enviada aos inversores que transformam a corrente contínua em corrente alternada (AC), a mesma fornecida pelas concessionárias.',
+  },
+  {
+    number: '03',
+    title: 'Distribuição',
+    description:
+      'Os inversores enviam a corrente alternada para o painel central elétrico que alimenta os equipamentos elétricos da instalação.',
+  },
+  {
+    number: '04',
+    title: 'Excedente',
+    description: 'O excedente de energia produzido é devolvido à rede elétrica local.',
+  },
+  {
+    number: '05',
+    title: 'Economia',
+    description:
+      'A inserção de energia na rede causa a regressão do relógio medidor gerando uma redução do valor da conta de luz.',
+  },
+];
+
 export function BuilderEditorPanel({
   content,
   activeSectionId,
@@ -111,19 +193,31 @@ export function BuilderEditorPanel({
     const node = editorScrollRef.current;
     if (!node) return;
 
-    const timer = setTimeout(() => {
-      const target = node.querySelector<HTMLElement>(`[data-builder-section-id="${activeSectionId}"]`);
+    const scrollToSectionHeader = (behavior: ScrollBehavior) => {
+      const target =
+        node.querySelector<HTMLElement>(`[data-builder-section-trigger-id="${activeSectionId}"]`) ??
+        node.querySelector<HTMLElement>(`[data-builder-section-id="${activeSectionId}"]`);
       if (!target) {
-        node.scrollTo({ top: 0, behavior: 'smooth' });
+        node.scrollTo({ top: 0, behavior });
         return;
       }
-      const containerRect = node.getBoundingClientRect();
-      const targetRect = target.getBoundingClientRect();
-      const targetTop = Math.max(0, node.scrollTop + targetRect.top - containerRect.top - 8);
-      node.scrollTo({ top: targetTop, behavior: 'smooth' });
+      const targetTop = Math.max(0, target.offsetTop - 8);
+      node.scrollTo({ top: targetTop, behavior });
+    };
+
+    const timer = window.setTimeout(() => {
+      scrollToSectionHeader('smooth');
     }, 0);
 
-    return () => clearTimeout(timer);
+    // Corrige o offset após a animação do accordion quando há conteúdo grande.
+    const correctionTimer = window.setTimeout(() => {
+      scrollToSectionHeader('auto');
+    }, ACCORDION_SCROLL_CORRECTION_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(correctionTimer);
+    };
   }, [activeSectionId, scrollToTopSignal]);
 
   const setGlobalField = <K extends keyof Content['global']>(field: K, value: Content['global'][K]) => {
@@ -151,6 +245,26 @@ export function BuilderEditorPanel({
       ...current,
       hero: {
         ...current.hero,
+        [field]: value,
+      },
+    }));
+  };
+
+  const setFinancingField = <K extends keyof NonNullable<Content['financing']>>(
+    field: K,
+    value: NonNullable<Content['financing']>[K],
+  ) => {
+    onContentChange((current) => ({
+      ...current,
+      financing: {
+        badge: current.financing?.badge ?? 'Pagamento Facilitado',
+        titlePrefix: current.financing?.titlePrefix ?? 'Comece a pagar em',
+        titleHighlight: current.financing?.titleHighlight ?? 'abril de 2026',
+        subtitle:
+          current.financing?.subtitle ??
+          'Em até 120 vezes, com 1º pagamento em 120 dias',
+        items: current.financing?.items?.length ? current.financing.items : DEFAULT_FINANCING_ITEMS,
+        ctaLabel: current.financing?.ctaLabel ?? 'Orçamento gratuito',
         [field]: value,
       },
     }));
@@ -334,6 +448,13 @@ export function BuilderEditorPanel({
               onChange={(event) => setGlobalField('address', event.target.value)}
             />
           </div>
+          <BuilderImageField
+            label="Logo"
+            description="Logo exibida no cabeçalho do site."
+            value={content.global.logo ?? ''}
+            onChange={(nextValue) => setGlobalField('logo', nextValue)}
+            onUploadImage={onUploadImage}
+          />
           <BuilderImageLayoutControls
             mode="logo"
             value={logoLayoutControlValue}
@@ -402,6 +523,7 @@ export function BuilderEditorPanel({
     }
 
     if (sectionId === 'hero') {
+      const heroStats = content.hero.stats?.length ? content.hero.stats : DEFAULT_HERO_STATS;
       return (
         <div className="grid gap-4">
           <div className="space-y-2">
@@ -423,12 +545,66 @@ export function BuilderEditorPanel({
             />
           </div>
           <div className="space-y-2">
-            <p className={builderLabelClassName}>CTA</p>
+            <p className={builderLabelClassName}>CTA principal</p>
             <input
               className={builderInputClassName}
               value={content.hero.ctaLabel}
               onChange={(event) => setHeroField('ctaLabel', event.target.value)}
             />
+          </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>CTA secundário</p>
+            <input
+              className={builderInputClassName}
+              value={content.hero.secondaryCtaLabel ?? 'Fale no Whatsapp'}
+              onChange={(event) => setHeroField('secondaryCtaLabel', event.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>CTA flutuante</p>
+            <input
+              className={builderInputClassName}
+              value={content.hero.floatingCtaLabel ?? 'WhatsApp'}
+              onChange={(event) => setHeroField('floatingCtaLabel', event.target.value)}
+            />
+          </div>
+          <div className="space-y-3">
+            <p className={builderLabelClassName}>Indicadores do Hero</p>
+            <div className="space-y-2">
+              {heroStats.map((item, index) => (
+                <div
+                  key={`${item.value}-${index}`}
+                  className="grid grid-cols-1 gap-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-2.5 sm:grid-cols-2"
+                >
+                  <input
+                    className={builderInputClassName}
+                    value={item.value}
+                    placeholder="+1000"
+                    onChange={(event) =>
+                      setHeroField(
+                        'stats',
+                        heroStats.map((current, currentIndex) =>
+                          currentIndex === index ? { ...current, value: event.target.value } : current,
+                        ),
+                      )
+                    }
+                  />
+                  <input
+                    className={builderInputClassName}
+                    value={item.label}
+                    placeholder="Projetos instalados"
+                    onChange={(event) =>
+                      setHeroField(
+                        'stats',
+                        heroStats.map((current, currentIndex) =>
+                          currentIndex === index ? { ...current, label: event.target.value } : current,
+                        ),
+                      )
+                    }
+                  />
+                </div>
+              ))}
+            </div>
           </div>
           <BuilderImageField
             label="Imagem de fundo"
@@ -443,6 +619,92 @@ export function BuilderEditorPanel({
             onChange={(nextValue) => updateCoverLayout('heroBackground', nextValue)}
             onReset={() => setImageLayoutField('heroBackground', undefined)}
           />
+        </div>
+      );
+    }
+
+    if (sectionId === 'financing') {
+      const financingItems = content.financing?.items?.length ? content.financing.items : DEFAULT_FINANCING_ITEMS;
+      return (
+        <div className="grid gap-4">
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Selo</p>
+            <input
+              className={builderInputClassName}
+              value={content.financing?.badge ?? 'Pagamento Facilitado'}
+              onChange={(event) => setFinancingField('badge', event.target.value)}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Título (prefixo)</p>
+              <input
+                className={builderInputClassName}
+                value={content.financing?.titlePrefix ?? 'Comece a pagar em'}
+                onChange={(event) => setFinancingField('titlePrefix', event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Título (destaque)</p>
+              <input
+                className={builderInputClassName}
+                value={content.financing?.titleHighlight ?? 'abril de 2026'}
+                onChange={(event) => setFinancingField('titleHighlight', event.target.value)}
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Subtítulo</p>
+            <textarea
+              className={builderTextAreaClassName}
+              rows={3}
+              value={content.financing?.subtitle ?? 'Em até 120 vezes, com 1º pagamento em 120 dias'}
+              onChange={(event) => setFinancingField('subtitle', event.target.value)}
+            />
+          </div>
+          <div className="space-y-3">
+            <p className={builderLabelClassName}>Cards de condições</p>
+            {financingItems.map((item, index) => (
+              <div
+                key={`${item.title}-${index}`}
+                className="space-y-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-3"
+              >
+                <input
+                  className={builderInputClassName}
+                  value={item.title}
+                  onChange={(event) =>
+                    setFinancingField(
+                      'items',
+                      financingItems.map((current, currentIndex) =>
+                        currentIndex === index ? { ...current, title: event.target.value } : current,
+                      ),
+                    )
+                  }
+                />
+                <textarea
+                  className={builderTextAreaClassName}
+                  rows={2}
+                  value={item.description}
+                  onChange={(event) =>
+                    setFinancingField(
+                      'items',
+                      financingItems.map((current, currentIndex) =>
+                        currentIndex === index ? { ...current, description: event.target.value } : current,
+                      ),
+                    )
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>CTA</p>
+            <input
+              className={builderInputClassName}
+              value={content.financing?.ctaLabel ?? 'Orçamento gratuito'}
+              onChange={(event) => setFinancingField('ctaLabel', event.target.value)}
+            />
+          </div>
         </div>
       );
     }
@@ -502,6 +764,432 @@ export function BuilderEditorPanel({
             <Plus className="h-4 w-4" />
             Adicionar benefício
           </button>
+        </div>
+      );
+    }
+
+    if (sectionId === 'proofBar') {
+      const cards = content.proofBar?.cards?.length ? content.proofBar.cards : DEFAULT_PROOFBAR_CARDS;
+      return (
+        <div className="grid gap-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Título (prefixo)</p>
+              <input
+                className={builderInputClassName}
+                value={content.proofBar?.titlePrefix ?? 'Escolha a empresa'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    proofBar: { ...(current.proofBar ?? { image: '' }), titlePrefix: event.target.value },
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Título (destaque)</p>
+              <input
+                className={builderInputClassName}
+                value={content.proofBar?.titleHighlight ?? 'mais bem avaliada'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    proofBar: { ...(current.proofBar ?? { image: '' }), titleHighlight: event.target.value },
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Título (sufixo)</p>
+              <input
+                className={builderInputClassName}
+                value={content.proofBar?.titleSuffix ?? 'do Rio de Janeiro e não tenha dor de cabeça'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    proofBar: { ...(current.proofBar ?? { image: '' }), titleSuffix: event.target.value },
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Descrição principal</p>
+            <textarea
+              className={builderTextAreaClassName}
+              rows={4}
+              value={
+                content.proofBar?.description ??
+                'SOMOS a empresa com o maior número de avaliação 5 estrelas no estado do Rio de Janeiro, com equipe de Engenharia e Instalação certificada e especializada. Equipe própria, nada de tercerizados. Receba tudo 100% funcionando - Resolvemos toda a burocracia'
+              }
+              onChange={(event) =>
+                onContentChange((current) => ({
+                  ...current,
+                  proofBar: { ...(current.proofBar ?? { image: '' }), description: event.target.value },
+                }))
+              }
+            />
+          </div>
+          <div className="space-y-3">
+            <p className={builderLabelClassName}>Cards</p>
+            {cards.map((card, index) => (
+              <div
+                key={`${card.title}-${index}`}
+                className="space-y-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-3"
+              >
+                <input
+                  className={builderInputClassName}
+                  value={card.title}
+                  onChange={(event) =>
+                    onContentChange((current) => ({
+                      ...current,
+                      proofBar: {
+                        ...(current.proofBar ?? { image: '' }),
+                        cards: cards.map((currentCard, currentIndex) =>
+                          currentIndex === index ? { ...currentCard, title: event.target.value } : currentCard,
+                        ),
+                      },
+                    }))
+                  }
+                />
+                <textarea
+                  className={builderTextAreaClassName}
+                  rows={2}
+                  value={card.description}
+                  onChange={(event) =>
+                    onContentChange((current) => ({
+                      ...current,
+                      proofBar: {
+                        ...(current.proofBar ?? { image: '' }),
+                        cards: cards.map((currentCard, currentIndex) =>
+                          currentIndex === index
+                            ? { ...currentCard, description: event.target.value }
+                            : currentCard,
+                        ),
+                      },
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>CTA primário</p>
+              <input
+                className={builderInputClassName}
+                value={content.proofBar?.primaryCtaLabel ?? 'Orçamento gratuito'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    proofBar: { ...(current.proofBar ?? { image: '' }), primaryCtaLabel: event.target.value },
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>CTA secundário</p>
+              <input
+                className={builderInputClassName}
+                value={content.proofBar?.secondaryCtaLabel ?? 'Fale no Whatsapp'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    proofBar: { ...(current.proofBar ?? { image: '' }), secondaryCtaLabel: event.target.value },
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <BuilderImageField
+            label="Imagem da prova social"
+            value={content.proofBar?.image ?? ''}
+            onUploadImage={onUploadImage}
+            onChange={(nextValue) =>
+              onContentChange((current) => ({
+                ...current,
+                proofBar: { ...(current.proofBar ?? { image: '' }), image: nextValue },
+              }))
+            }
+          />
+          <BuilderImageLayoutControls
+            mode="cover"
+            value={proofBarImageLayoutControlValue}
+            onChange={(nextValue) => updateCoverLayout('proofBar', nextValue)}
+            onReset={() => setImageLayoutField('proofBar', undefined)}
+          />
+        </div>
+      );
+    }
+
+    if (sectionId === 'fullService') {
+      const services = content.fullService?.services?.length
+        ? content.fullService.services
+        : content.benefits.length
+          ? content.benefits.map((benefit) => ({ title: benefit.title, description: benefit.text }))
+          : DEFAULT_FULL_SERVICE_ITEMS;
+      return (
+        <div className="grid gap-4">
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Selo</p>
+            <input
+              className={builderInputClassName}
+              value={content.fullService?.badge ?? 'Serviço Completo'}
+              onChange={(event) =>
+                onContentChange((current) => ({
+                  ...current,
+                  fullService: { ...(current.fullService ?? { image: '' }), badge: event.target.value },
+                }))
+              }
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Título (prefixo)</p>
+              <input
+                className={builderInputClassName}
+                value={content.fullService?.titlePrefix ?? 'Cuidamos de'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    fullService: { ...(current.fullService ?? { image: '' }), titlePrefix: event.target.value },
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Título (destaque)</p>
+              <input
+                className={builderInputClassName}
+                value={content.fullService?.titleHighlight ?? 'tudo para você'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    fullService: { ...(current.fullService ?? { image: '' }), titleHighlight: event.target.value },
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Descrição</p>
+            <textarea
+              className={builderTextAreaClassName}
+              rows={3}
+              value={
+                content.fullService?.description ??
+                'Do projeto à instalação, com homologação garantida e suporte completo. Atendimento personalizado em todas as etapas do seu sistema solar.'
+              }
+              onChange={(event) =>
+                onContentChange((current) => ({
+                  ...current,
+                  fullService: { ...(current.fullService ?? { image: '' }), description: event.target.value },
+                }))
+              }
+            />
+          </div>
+          <div className="space-y-3">
+            <p className={builderLabelClassName}>Lista de serviços</p>
+            {services.map((service, index) => (
+              <div
+                key={`${service.title}-${index}`}
+                className="space-y-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-3"
+              >
+                <input
+                  className={builderInputClassName}
+                  value={service.title}
+                  onChange={(event) =>
+                    onContentChange((current) => ({
+                      ...current,
+                      fullService: {
+                        ...(current.fullService ?? { image: '' }),
+                        services: services.map((currentService, currentIndex) =>
+                          currentIndex === index
+                            ? { ...currentService, title: event.target.value }
+                            : currentService,
+                        ),
+                      },
+                    }))
+                  }
+                />
+                <textarea
+                  className={builderTextAreaClassName}
+                  rows={2}
+                  value={service.description}
+                  onChange={(event) =>
+                    onContentChange((current) => ({
+                      ...current,
+                      fullService: {
+                        ...(current.fullService ?? { image: '' }),
+                        services: services.map((currentService, currentIndex) =>
+                          currentIndex === index
+                            ? { ...currentService, description: event.target.value }
+                            : currentService,
+                        ),
+                      },
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>CTA</p>
+            <input
+              className={builderInputClassName}
+              value={content.fullService?.ctaLabel ?? 'Fale no Whatsapp'}
+              onChange={(event) =>
+                onContentChange((current) => ({
+                  ...current,
+                  fullService: { ...(current.fullService ?? { image: '' }), ctaLabel: event.target.value },
+                }))
+              }
+            />
+          </div>
+          <BuilderImageField
+            label="Imagem da seção"
+            value={content.fullService?.image ?? ''}
+            onUploadImage={onUploadImage}
+            onChange={(nextValue) =>
+              onContentChange((current) => ({
+                ...current,
+                fullService: { ...(current.fullService ?? { image: '' }), image: nextValue },
+              }))
+            }
+          />
+          <BuilderImageLayoutControls
+            mode="cover"
+            value={fullServiceImageLayoutControlValue}
+            onChange={(nextValue) => updateCoverLayout('fullService', nextValue)}
+            onReset={() => setImageLayoutField('fullService', undefined)}
+          />
+        </div>
+      );
+    }
+
+    if (sectionId === 'howItWorks') {
+      const steps = content.howItWorks?.steps?.length ? content.howItWorks.steps : DEFAULT_HOW_IT_WORKS_STEPS;
+      return (
+        <div className="grid gap-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Título (prefixo)</p>
+              <input
+                className={builderInputClassName}
+                value={content.howItWorks?.titlePrefix ?? 'Como'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    howItWorks: { ...(current.howItWorks ?? { image: '' }), titlePrefix: event.target.value },
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Título (destaque)</p>
+              <input
+                className={builderInputClassName}
+                value={content.howItWorks?.titleHighlight ?? 'funciona'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    howItWorks: { ...(current.howItWorks ?? { image: '' }), titleHighlight: event.target.value },
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Subtítulo</p>
+            <textarea
+              className={builderTextAreaClassName}
+              rows={2}
+              value={content.howItWorks?.subtitle ?? 'Entenda o processo de geração da energia solar fotovoltaica'}
+              onChange={(event) =>
+                onContentChange((current) => ({
+                  ...current,
+                  howItWorks: { ...(current.howItWorks ?? { image: '' }), subtitle: event.target.value },
+                }))
+              }
+            />
+          </div>
+          <div className="space-y-3">
+            <p className={builderLabelClassName}>Passos</p>
+            {steps.map((step, index) => (
+              <div
+                key={`${step.number}-${index}`}
+                className="space-y-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-3"
+              >
+                <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
+                  <input
+                    className={builderInputClassName}
+                    value={step.number}
+                    onChange={(event) =>
+                      onContentChange((current) => ({
+                        ...current,
+                        howItWorks: {
+                          ...(current.howItWorks ?? { image: '' }),
+                          steps: steps.map((currentStep, currentIndex) =>
+                            currentIndex === index ? { ...currentStep, number: event.target.value } : currentStep,
+                          ),
+                        },
+                      }))
+                    }
+                  />
+                  <input
+                    className={builderInputClassName}
+                    value={step.title}
+                    onChange={(event) =>
+                      onContentChange((current) => ({
+                        ...current,
+                        howItWorks: {
+                          ...(current.howItWorks ?? { image: '' }),
+                          steps: steps.map((currentStep, currentIndex) =>
+                            currentIndex === index ? { ...currentStep, title: event.target.value } : currentStep,
+                          ),
+                        },
+                      }))
+                    }
+                  />
+                </div>
+                <textarea
+                  className={builderTextAreaClassName}
+                  rows={2}
+                  value={step.description}
+                  onChange={(event) =>
+                    onContentChange((current) => ({
+                      ...current,
+                      howItWorks: {
+                        ...(current.howItWorks ?? { image: '' }),
+                        steps: steps.map((currentStep, currentIndex) =>
+                          currentIndex === index
+                            ? { ...currentStep, description: event.target.value }
+                            : currentStep,
+                        ),
+                      },
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <BuilderImageField
+            label="Imagem principal"
+            value={content.howItWorks?.image ?? ''}
+            onUploadImage={onUploadImage}
+            onChange={(nextValue) =>
+              onContentChange((current) => ({
+                ...current,
+                howItWorks: { ...(current.howItWorks ?? { image: '' }), image: nextValue },
+              }))
+            }
+          />
+          <BuilderImageLayoutControls
+            mode="cover"
+            value={howItWorksImageLayoutControlValue}
+            onChange={(nextValue) => updateCoverLayout('howItWorks', nextValue)}
+            onReset={() => setImageLayoutField('howItWorks', undefined)}
+          />
         </div>
       );
     }
@@ -983,7 +1671,10 @@ export function BuilderEditorPanel({
                       : 'border-[var(--builder-border)]',
                   )}
                 >
-                  <AccordionTrigger className="py-2.5 text-left no-underline hover:no-underline">
+                  <AccordionTrigger
+                    data-builder-section-trigger-id={section.id}
+                    className="py-2.5 text-left no-underline hover:no-underline"
+                  >
                     <div>
                       <p className="text-[13px] font-bold uppercase tracking-[0.11em] text-[var(--builder-text-muted)]">
                         {section.title}

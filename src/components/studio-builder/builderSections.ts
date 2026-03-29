@@ -4,7 +4,11 @@ export type BuilderSectionId =
   | 'global'
   | 'seo'
   | 'hero'
+  | 'financing'
   | 'benefits'
+  | 'proofBar'
+  | 'fullService'
+  | 'howItWorks'
   | 'showcase'
   | 'media'
   | 'cta'
@@ -36,7 +40,14 @@ export const BUILDER_SECTIONS: BuilderSection[] = [
   {
     id: 'hero',
     title: 'Hero',
-    description: 'Título principal, subtítulo e CTA inicial.',
+    description: 'Título principal, CTAs e indicadores.',
+    group: 'Conteúdo',
+    editable: true,
+  },
+  {
+    id: 'financing',
+    title: 'Pagamento',
+    description: 'Textos da seção de condições de pagamento.',
     group: 'Conteúdo',
     editable: true,
   },
@@ -44,6 +55,27 @@ export const BUILDER_SECTIONS: BuilderSection[] = [
     id: 'benefits',
     title: 'Benefícios',
     description: 'Blocos de benefício do site.',
+    group: 'Conteúdo',
+    editable: true,
+  },
+  {
+    id: 'proofBar',
+    title: 'Prova Social',
+    description: 'Título, cards e CTAs da seção de avaliações.',
+    group: 'Conteúdo',
+    editable: true,
+  },
+  {
+    id: 'fullService',
+    title: 'Serviço Completo',
+    description: 'Textos e lista de serviços da seção completa.',
+    group: 'Conteúdo',
+    editable: true,
+  },
+  {
+    id: 'howItWorks',
+    title: 'Como Funciona',
+    description: 'Título e passos da geração solar.',
     group: 'Conteúdo',
     editable: true,
   },

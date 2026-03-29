@@ -13,6 +13,7 @@ interface HeaderProps {
 export const Header = ({ onOpenPopup, content }: HeaderProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const logoLayout = normalizeLogoImageLayout(content?.imageLayout?.logo);
+  const logoSrc = content?.global.logo || 'https://www.efitecsolar.com/assets/images/logo.png';
 
   const handleCTA = () => {
     trackCTAPopupOpen('header');
@@ -31,7 +32,7 @@ export const Header = ({ onOpenPopup, content }: HeaderProps) => {
         {/* Logo */}
         <a href="/" className="flex items-center transition-transform duration-300 hover:scale-105">
           <img 
-            src="https://www.efitecsolar.com/assets/images/logo.png" 
+            src={logoSrc}
             alt={content?.global.brand || 'EFITEC SOLAR'}
             className="h-10 md:h-12 w-auto origin-left"
             style={{
