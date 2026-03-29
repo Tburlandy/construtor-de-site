@@ -24,6 +24,7 @@ import type { BuilderSection, BuilderSectionId } from './builderSections';
 export type BuilderSidebarModuleId =
   | 'builder'
   | 'history'
+  | 'clientSettings'
   | 'publish';
 
 interface BuilderSidebarProps {
@@ -46,8 +47,9 @@ interface BuilderModule {
 const modules: BuilderModule[] = [
   { id: 'builder', label: 'Construtor', icon: Boxes },
   { id: 'history', label: 'Histórico', icon: FileClock },
+  { id: 'clientSettings', label: 'Config. cliente', icon: Settings2 },
   { id: 'publish', label: 'Publicação', icon: Rocket },
-  { id: 'clients', label: 'Clientes', icon: Settings2, href: '/construtor' },
+  { id: 'clients', label: 'Clientes', icon: Building, href: '/construtor' },
 ] as const;
 
 const sectionIcons: Record<BuilderSectionId, LucideIcon> = {

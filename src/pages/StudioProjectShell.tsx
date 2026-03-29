@@ -958,6 +958,10 @@ export default function StudioProjectShell() {
         return;
       }
 
+      if (moduleId === 'clientSettings') {
+        return;
+      }
+
       if (moduleId === 'publish') {
         setPublishOpen(true);
         return;
@@ -1042,6 +1046,165 @@ export default function StudioProjectShell() {
                 onRefresh={() => void loadVersions()}
                 onRestore={(versionId) => void handleRestoreVersion(versionId)}
               />
+            ) : activeModuleId === 'clientSettings' ? (
+              <section className="builder-surface flex h-full min-h-0 flex-col overflow-hidden">
+                <header className="border-b border-[var(--builder-border)] bg-gradient-to-r from-[rgba(2,6,23,0.96)] to-[rgba(9,18,37,0.92)] px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[var(--builder-accent-warm)]">
+                    Cliente
+                  </p>
+                  <h2 className="builder-heading mt-1.5 text-[22px] font-bold leading-[1.1] text-[var(--builder-text-primary)]">
+                    Configurações do Cliente
+                  </h2>
+                  <p className="mt-2 text-xs text-[var(--builder-text-secondary)]">
+                    Ajuste GTM e integrações de lead do cliente atual.
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--builder-text-muted)]">
+                    As alterações são salvas pelo botão "Salvar" do topo.
+                  </p>
+                </header>
+
+                <div className="builder-scroll flex-1 overflow-y-auto p-3">
+                  <div className="grid gap-3">
+                    <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>Google Tag Manager ID</p>
+                      <input
+                        className={builderInputClassName}
+                        value={content.global.gtmId ?? ''}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              ...(event.target.value.trim()
+                                ? { gtmId: event.target.value }
+                                : (() => {
+                                    const nextGlobal = { ...current.global };
+                                    delete nextGlobal.gtmId;
+                                    return nextGlobal;
+                                  })()),
+                            },
+                          }))
+                        }
+                        placeholder="GTM-XXXXXXX"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>Webhook principal</p>
+                      <input
+                        className={builderInputClassName}
+                        value={content.global.webhookUrl ?? ''}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              ...(event.target.value.trim()
+                                ? { webhookUrl: event.target.value }
+                                : (() => {
+                                    const nextGlobal = { ...current.global };
+                                    delete nextGlobal.webhookUrl;
+                                    return nextGlobal;
+                                  })()),
+                            },
+                          }))
+                        }
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>Webhook secundário</p>
+                      <input
+                        className={builderInputClassName}
+                        value={content.global.secondaryWebhookUrl ?? ''}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              ...(event.target.value.trim()
+                                ? { secondaryWebhookUrl: event.target.value }
+                                : (() => {
+                                    const nextGlobal = { ...current.global };
+                                    delete nextGlobal.secondaryWebhookUrl;
+                                    return nextGlobal;
+                                  })()),
+                            },
+                          }))
+                        }
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <p className={builderLabelClassName}>Form ID</p>
+                        <input
+                          className={builderInputClassName}
+                          value={content.global.formId ?? ''}
+                          onChange={(event) =>
+                            handleContentChange((current) => ({
+                              ...current,
+                              global: {
+                                ...current.global,
+                                ...(event.target.value.trim()
+                                  ? { formId: event.target.value }
+                                  : (() => {
+                                      const nextGlobal = { ...current.global };
+                                      delete nextGlobal.formId;
+                                      return nextGlobal;
+                                    })()),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className={builderLabelClassName}>Form Name</p>
+                        <input
+                          className={builderInputClassName}
+                          value={content.global.formName ?? ''}
+                          onChange={(event) =>
+                            handleContentChange((current) => ({
+                              ...current,
+                              global: {
+                                ...current.global,
+                                ...(event.target.value.trim()
+                                  ? { formName: event.target.value }
+                                  : (() => {
+                                      const nextGlobal = { ...current.global };
+                                      delete nextGlobal.formName;
+                                      return nextGlobal;
+                                    })()),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className={builderLabelClassName}>Canal ID</p>
+                        <input
+                          className={builderInputClassName}
+                          value={content.global.canalId ?? ''}
+                          onChange={(event) =>
+                            handleContentChange((current) => ({
+                              ...current,
+                              global: {
+                                ...current.global,
+                                ...(event.target.value.trim()
+                                  ? { canalId: event.target.value }
+                                  : (() => {
+                                      const nextGlobal = { ...current.global };
+                                      delete nextGlobal.canalId;
+                                      return nextGlobal;
+                                    })()),
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
             ) : activeModuleId === 'publish' ? (
               <section className="builder-surface flex h-full min-h-0 flex-col overflow-hidden">
                 <header className="border-b border-[var(--builder-border)] bg-gradient-to-r from-[rgba(2,6,23,0.96)] to-[rgba(9,18,37,0.92)] px-4 py-3">

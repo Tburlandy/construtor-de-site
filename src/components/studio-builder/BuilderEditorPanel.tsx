@@ -481,18 +481,6 @@ export function BuilderEditorPanel({
             />
           </div>
           <div className="space-y-2">
-            <p className={builderLabelClassName}>Google Tag Manager ID</p>
-            <input
-              className={builderInputClassName}
-              value={content.global.gtmId ?? ''}
-              onChange={(event) => setGlobalField('gtmId', event.target.value)}
-              placeholder="GTM-XXXXXXX"
-            />
-            <p className={builderHintClassName}>
-              Usado para injetar GTM por cliente no runtime e fixado no ZIP de exportação.
-            </p>
-          </div>
-          <div className="space-y-2">
             <p className={builderLabelClassName}>CNPJ</p>
             <input
               className={builderInputClassName}
@@ -508,50 +496,6 @@ export function BuilderEditorPanel({
               value={content.global.address}
               onChange={(event) => setGlobalField('address', event.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Webhook principal</p>
-            <input
-              className={builderInputClassName}
-              value={content.global.webhookUrl ?? ''}
-              onChange={(event) => setGlobalField('webhookUrl', event.target.value)}
-              placeholder="https://..."
-            />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Webhook secundário</p>
-            <input
-              className={builderInputClassName}
-              value={content.global.secondaryWebhookUrl ?? ''}
-              onChange={(event) => setGlobalField('secondaryWebhookUrl', event.target.value)}
-              placeholder="https://..."
-            />
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Form ID</p>
-              <input
-                className={builderInputClassName}
-                value={content.global.formId ?? ''}
-                onChange={(event) => setGlobalField('formId', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Form Name</p>
-              <input
-                className={builderInputClassName}
-                value={content.global.formName ?? ''}
-                onChange={(event) => setGlobalField('formName', event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Canal ID</p>
-              <input
-                className={builderInputClassName}
-                value={content.global.canalId ?? ''}
-                onChange={(event) => setGlobalField('canalId', event.target.value)}
-              />
-            </div>
           </div>
           <BuilderImageField
             label="Logo"

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, Loader2, PencilLine, Plus, Settings } from 'lucide-react';
+import type { Content } from '@/content/schema';
 import type { ProjectMetadata } from '@/platform/contracts';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -66,6 +67,28 @@ function getErrorMessage(payload: unknown, fallback: string): string {
     }
   }
   return fallback;
+}
+
+type ClientConfigFormState = {
+  name: string;
+  gtmId: string;
+  webhookUrl: string;
+  secondaryWebhookUrl: string;
+  formId: string;
+  formName: string;
+  canalId: string;
+};
+
+function createInitialClientConfigForm(name = ''): ClientConfigFormState {
+  return {
+    name,
+    gtmId: '',
+    webhookUrl: '',
+    secondaryWebhookUrl: '',
+    formId: '',
+    formName: '',
+    canalId: '',
+  };
 }
 
 async function fetchProjectsWithTimeout(timeoutMs = 8000): Promise<Response> {
@@ -234,8 +257,10 @@ export default function StudioAdminEntry() {
   const [createForm, setCreateForm] = useState({ name: '' });
   const [editOpen, setEditOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectMetadata | null>(null);
-  const [editingName, setEditingName] = useState('');
-  const [savingName, setSavingName] = useState(false);
+  const [editingContent, setEditingContent] = useState<Content | null>(null);
+  const [editForm, setEditForm] = useState<ClientConfigFormState>(createInitialClientConfigForm);
+  const [loadingEditData, setLoadingEditData] = useState(false);
+  const [savingEditData, setSavingEditData] = useState(false);
 
   // publish config dialog
   const [configOpen, setConfigOpen] = useState(false);
@@ -381,16 +406,52 @@ export default function StudioAdminEntry() {
     }
   };
 
-  const openEditDialog = (project: ProjectMetadata) => {
+  const openEditDialog = async (project: ProjectMetadata) => {
     setEditingProject(project);
-    setEditingName(project.name);
+    setEditingContent(null);
+    setEditForm(createInitialClientConfigForm(project.name));
     setEditOpen(true);
+    setLoadingEditData(true);
+
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(project.projectId)}/content`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getErrorMessage(payload, 'Não foi possível carregar os dados do cliente.'));
+      }
+
+      const loadedContent = payload as Content;
+      setEditingContent(loadedContent);
+      setEditForm({
+        name: project.name,
+        gtmId: loadedContent.global.gtmId ?? '',
+        webhookUrl: loadedContent.global.webhookUrl ?? '',
+        secondaryWebhookUrl: loadedContent.global.secondaryWebhookUrl ?? '',
+        formId: loadedContent.global.formId ?? '',
+        formName: loadedContent.global.formName ?? '',
+        canalId: loadedContent.global.canalId ?? '',
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro ao carregar cliente',
+        description:
+          error instanceof Error && error.message
+            ? error.message
+            : 'Falha ao carregar dados para edição.',
+        variant: 'destructive',
+      });
+      setEditOpen(false);
+      setEditingProject(null);
+      setEditingContent(null);
+    } finally {
+      setLoadingEditData(false);
+    }
   };
 
-  const handleEditProjectName = async () => {
-    if (!editingProject) return;
+  const handleSaveClientConfig = async () => {
+    if (!editingProject || !editingContent) return;
 
-    const name = editingName.trim();
+    const name = editForm.name.trim();
     if (!name) {
       toast({
         title: 'Campos obrigatórios',
@@ -400,38 +461,85 @@ export default function StudioAdminEntry() {
       return;
     }
 
-    setSavingName(true);
+    setSavingEditData(true);
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(editingProject.projectId)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(getErrorMessage(payload, 'Não foi possível atualizar o nome do cliente.'));
+      const updatedContent: Content = {
+        ...editingContent,
+        global: {
+          ...editingContent.global,
+          ...(editForm.gtmId.trim() ? { gtmId: editForm.gtmId.trim() } : {}),
+          ...(editForm.webhookUrl.trim() ? { webhookUrl: editForm.webhookUrl.trim() } : {}),
+          ...(editForm.secondaryWebhookUrl.trim()
+            ? { secondaryWebhookUrl: editForm.secondaryWebhookUrl.trim() }
+            : {}),
+          ...(editForm.formId.trim() ? { formId: editForm.formId.trim() } : {}),
+          ...(editForm.formName.trim() ? { formName: editForm.formName.trim() } : {}),
+          ...(editForm.canalId.trim() ? { canalId: editForm.canalId.trim() } : {}),
+        },
+      };
+
+      if (editingContent.global.gtmId && !editForm.gtmId.trim()) {
+        delete updatedContent.global.gtmId;
+      }
+      if (editingContent.global.webhookUrl && !editForm.webhookUrl.trim()) {
+        delete updatedContent.global.webhookUrl;
+      }
+      if (editingContent.global.secondaryWebhookUrl && !editForm.secondaryWebhookUrl.trim()) {
+        delete updatedContent.global.secondaryWebhookUrl;
+      }
+      if (editingContent.global.formId && !editForm.formId.trim()) {
+        delete updatedContent.global.formId;
+      }
+      if (editingContent.global.formName && !editForm.formName.trim()) {
+        delete updatedContent.global.formName;
+      }
+      if (editingContent.global.canalId && !editForm.canalId.trim()) {
+        delete updatedContent.global.canalId;
       }
 
-      const updatedProject = payload as ProjectMetadata;
+      const [projectResponse, contentResponse] = await Promise.all([
+        fetch(`/api/projects/${encodeURIComponent(editingProject.projectId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        }),
+        fetch(`/api/projects/${encodeURIComponent(editingProject.projectId)}/content`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedContent),
+        }),
+      ]);
+
+      const projectPayload = await projectResponse.json().catch(() => ({}));
+      const contentPayload = await contentResponse.json().catch(() => ({}));
+      if (!projectResponse.ok) {
+        throw new Error(getErrorMessage(projectPayload, 'Não foi possível atualizar os dados do cliente.'));
+      }
+      if (!contentResponse.ok) {
+        throw new Error(getErrorMessage(contentPayload, 'Não foi possível atualizar as integrações do cliente.'));
+      }
+
+      const updatedProject = projectPayload as ProjectMetadata;
       setProjects((current) =>
         current.map((item) => (item.projectId === updatedProject.projectId ? updatedProject : item)),
       );
       setEditOpen(false);
       setEditingProject(null);
-      setEditingName('');
+      setEditingContent(null);
+      setEditForm(createInitialClientConfigForm());
       toast({
-        title: 'Nome atualizado',
+        title: 'Cliente atualizado',
         description: updatedProject.name,
       });
     } catch (error) {
       toast({
         title: 'Erro ao atualizar',
         description:
-          error instanceof Error && error.message ? error.message : 'Falha de rede ao atualizar nome.',
+          error instanceof Error && error.message ? error.message : 'Falha de rede ao atualizar cliente.',
         variant: 'destructive',
       });
     } finally {
-      setSavingName(false);
+      setSavingEditData(false);
     }
   };
 
@@ -625,7 +733,16 @@ export default function StudioAdminEntry() {
                 return (
                   <div
                     key={item.projectId}
-                    className="flex flex-col rounded-[14px] border border-[var(--builder-border)] bg-[rgba(15,23,42,0.62)] p-4"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/cliente/${encodeURIComponent(item.projectId)}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        navigate(`/cliente/${encodeURIComponent(item.projectId)}`);
+                      }
+                    }}
+                    className="flex cursor-pointer flex-col rounded-[14px] border border-[var(--builder-border)] bg-[rgba(15,23,42,0.62)] p-4"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
@@ -638,7 +755,10 @@ export default function StudioAdminEntry() {
                         <button
                           type="button"
                           className="rounded-[8px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.7)] p-1.5 text-[var(--builder-text-secondary)] transition hover:bg-[var(--builder-bg-surface-highlight)] hover:text-[var(--builder-text-primary)]"
-                          onClick={() => void openConfigDialog(item)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void openConfigDialog(item);
+                          }}
                           title="Configurar publicação"
                         >
                           <Settings className="h-3.5 w-3.5" />
@@ -646,7 +766,10 @@ export default function StudioAdminEntry() {
                         <button
                           type="button"
                           className="rounded-[8px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.7)] p-1.5 text-[var(--builder-text-secondary)] transition hover:bg-[var(--builder-bg-surface-highlight)] hover:text-[var(--builder-text-primary)]"
-                          onClick={() => openEditDialog(item)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void openEditDialog(item);
+                          }}
                           title="Editar cliente"
                         >
                           <PencilLine className="h-3.5 w-3.5" />
@@ -668,9 +791,10 @@ export default function StudioAdminEntry() {
                       <button
                         type="button"
                         className="inline-flex items-center gap-2 rounded-[var(--builder-radius-pill)] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.7)] px-3 py-1.5 text-sm font-semibold text-[var(--builder-text-primary)] transition hover:bg-[var(--builder-bg-surface-highlight)]"
-                        onClick={() =>
-                          navigate(`/cliente/${encodeURIComponent(item.projectId)}`)
-                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          navigate(`/cliente/${encodeURIComponent(item.projectId)}`);
+                        }}
                       >
                         Abrir cliente
                         <ArrowRight className="h-4 w-4" />
@@ -740,7 +864,9 @@ export default function StudioAdminEntry() {
           setEditOpen(nextOpen);
           if (!nextOpen) {
             setEditingProject(null);
-            setEditingName('');
+            setEditingContent(null);
+            setEditForm(createInitialClientConfigForm());
+            setLoadingEditData(false);
           }
         }}
       >
@@ -749,33 +875,114 @@ export default function StudioAdminEntry() {
             <DialogHeader>
               <DialogTitle className="builder-heading text-xl text-[var(--builder-text-primary)]">Editar cliente</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-3 py-2">
-              <div className="space-y-1.5">
-                <p className={builderLabelClassName}>Nome</p>
-                <input
-                  className={builderInputClassName}
-                  value={editingName}
-                  onChange={(event) => setEditingName(event.target.value)}
-                  placeholder="Nome exibido no Builder"
-                />
+            {loadingEditData ? (
+              <div className="flex items-center gap-2 py-6 text-sm text-[var(--builder-text-secondary)]">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Carregando dados do cliente...
               </div>
-            </div>
+            ) : (
+              <div className="grid gap-3 py-2">
+                <div className="space-y-1.5">
+                  <p className={builderLabelClassName}>Nome</p>
+                  <input
+                    className={builderInputClassName}
+                    value={editForm.name}
+                    onChange={(event) =>
+                      setEditForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                    placeholder="Nome exibido no Builder"
+                    disabled={savingEditData}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <p className={builderLabelClassName}>Google Tag Manager ID</p>
+                  <input
+                    className={builderInputClassName}
+                    value={editForm.gtmId}
+                    onChange={(event) =>
+                      setEditForm((current) => ({ ...current, gtmId: event.target.value }))
+                    }
+                    placeholder="GTM-XXXXXXX"
+                    disabled={savingEditData}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <p className={builderLabelClassName}>Webhook principal</p>
+                  <input
+                    className={builderInputClassName}
+                    value={editForm.webhookUrl}
+                    onChange={(event) =>
+                      setEditForm((current) => ({ ...current, webhookUrl: event.target.value }))
+                    }
+                    placeholder="https://..."
+                    disabled={savingEditData}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <p className={builderLabelClassName}>Webhook secundário</p>
+                  <input
+                    className={builderInputClassName}
+                    value={editForm.secondaryWebhookUrl}
+                    onChange={(event) =>
+                      setEditForm((current) => ({ ...current, secondaryWebhookUrl: event.target.value }))
+                    }
+                    placeholder="https://..."
+                    disabled={savingEditData}
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <p className={builderLabelClassName}>Form ID</p>
+                    <input
+                      className={builderInputClassName}
+                      value={editForm.formId}
+                      onChange={(event) =>
+                        setEditForm((current) => ({ ...current, formId: event.target.value }))
+                      }
+                      disabled={savingEditData}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className={builderLabelClassName}>Form Name</p>
+                    <input
+                      className={builderInputClassName}
+                      value={editForm.formName}
+                      onChange={(event) =>
+                        setEditForm((current) => ({ ...current, formName: event.target.value }))
+                      }
+                      disabled={savingEditData}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className={builderLabelClassName}>Canal ID</p>
+                    <input
+                      className={builderInputClassName}
+                      value={editForm.canalId}
+                      onChange={(event) =>
+                        setEditForm((current) => ({ ...current, canalId: event.target.value }))
+                      }
+                      disabled={savingEditData}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
             <DialogFooter>
               <button
                 type="button"
                 className={builderSecondaryButtonClassName}
                 onClick={() => setEditOpen(false)}
-                disabled={savingName}
+                disabled={savingEditData || loadingEditData}
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 className={builderPrimaryButtonClassName}
-                onClick={() => void handleEditProjectName()}
-                disabled={savingName}
+                onClick={() => void handleSaveClientConfig()}
+                disabled={savingEditData || loadingEditData}
               >
-                {savingName ? (
+                {savingEditData ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Salvando
