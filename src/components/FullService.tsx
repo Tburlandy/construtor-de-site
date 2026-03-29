@@ -4,6 +4,7 @@ import solarPanelsImage from '@/assets/solar-panels-angle.png';
 import { useEffect, useState } from 'react';
 import { fetchContent } from '@/lib/content';
 import type { Content } from '@/content/schema';
+import { normalizeCoverImageLayout } from '@/lib/imageLayout';
 
 interface FullServiceProps {
   onOpenPopup?: () => void;
@@ -17,6 +18,7 @@ export const FullService = ({ onOpenPopup }: FullServiceProps) => {
   }, []);
 
   const panelsImage = content?.fullService?.image || solarPanelsImage;
+  const panelsImageLayout = normalizeCoverImageLayout(content?.imageLayout?.fullService);
   const services = [
     {
       icon: FileCheck,
@@ -48,15 +50,22 @@ export const FullService = ({ onOpenPopup }: FullServiceProps) => {
             {/* Image side */}
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent rounded-3xl blur-3xl" />
-              <img 
-                src={panelsImage.startsWith('/') || panelsImage.startsWith('http') ? panelsImage : solarPanelsImage} 
-                alt="Painéis solares fotovoltaicos de alta qualidade" 
-                className="relative z-10 w-full h-auto drop-shadow-2xl"
-                width="800"
-                height="600"
-                loading="lazy"
-                decoding="async"
-              />
+              <div className="relative z-10 overflow-hidden rounded-3xl">
+                <img 
+                  src={panelsImage.startsWith('/') || panelsImage.startsWith('http') ? panelsImage : solarPanelsImage} 
+                  alt="Painéis solares fotovoltaicos de alta qualidade" 
+                  className="aspect-[4/3] w-full h-full object-cover drop-shadow-2xl"
+                  style={{
+                    objectPosition: `${panelsImageLayout.x}% ${panelsImageLayout.y}%`,
+                    transformOrigin: `${panelsImageLayout.x}% ${panelsImageLayout.y}%`,
+                    transform: `scale(${panelsImageLayout.scale})`,
+                  }}
+                  width="800"
+                  height="600"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
             </div>
 
             {/* Content side */}

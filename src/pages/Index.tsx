@@ -141,7 +141,7 @@ const Index = () => {
     <>
       <SEO content={content} />
 
-      <Header onOpenPopup={handleOpenPopup} />
+      <Header onOpenPopup={handleOpenPopup} content={content} />
       <Hero onOpenPopup={handleOpenPopup} content={content} />
       <Financing onOpenPopup={handleOpenPopup} />
       <FullService onOpenPopup={handleOpenPopup} />

@@ -87,6 +87,13 @@ export const PublicationRecordSchema = z.object({
   message: z.string().optional(),
 });
 
+export const ProjectVersionRecordSchema = z.object({
+  versionId: RecordIdSchema,
+  projectId: ProjectIdSchema,
+  content: z.record(z.string(), JsonValueSchema),
+  createdAt: TimestampSchema,
+});
+
 /** Visão composta opcionalmente enriquecida; `seo` pode faltar enquanto o SEO vier só de `content.json` legado. */
 export const ProjectRecordSchema = z.object({
   projectId: ProjectIdSchema,
@@ -105,4 +112,5 @@ export type ProjectContentRecord = z.infer<typeof ProjectContentRecordSchema>;
 export type ProjectSeoConfig = z.infer<typeof ProjectSeoConfigSchema>;
 export type DeployTargetRecord = z.infer<typeof DeployTargetRecordSchema>;
 export type PublicationRecord = z.infer<typeof PublicationRecordSchema>;
+export type ProjectVersionRecord = z.infer<typeof ProjectVersionRecordSchema>;
 export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;

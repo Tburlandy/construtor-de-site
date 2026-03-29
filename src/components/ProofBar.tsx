@@ -6,6 +6,7 @@ import { trackCTAPopupOpen } from '@/lib/gtm';
 import { useEffect, useState } from 'react';
 import { fetchContent } from '@/lib/content';
 import type { Content } from '@/content/schema';
+import { normalizeCoverImageLayout } from '@/lib/imageLayout';
 
 interface ProofBarProps {
   onOpenPopup: () => void;
@@ -19,6 +20,7 @@ export const ProofBar = ({ onOpenPopup }: ProofBarProps) => {
   }, []);
 
   const reviewsImage = content?.proofBar?.image || googleReviewsImage;
+  const reviewsImageLayout = normalizeCoverImageLayout(content?.imageLayout?.proofBar);
   const benefits = [
     {
       icon: Star,
@@ -128,11 +130,16 @@ export const ProofBar = ({ onOpenPopup }: ProofBarProps) => {
                 <div className="absolute -inset-2 bg-primary/20 rounded-3xl blur-xl group-hover:bg-primary/30 transition duration-500" />
                 
                 {/* Image container */}
-                <div className="relative">
+                <div className="relative overflow-hidden rounded-2xl">
                   <img 
                     src={reviewsImage.startsWith('/') || reviewsImage.startsWith('http') ? reviewsImage : googleReviewsImage} 
                     alt="5.0 estrelas - 409 avaliações no Google" 
-                    className="relative z-10 w-full h-auto rounded-2xl shadow-elegant hover:scale-[1.02] transition-transform duration-500"
+                    className="relative z-10 aspect-[4/3] w-full h-full object-cover shadow-elegant transition-transform duration-500"
+                    style={{
+                      objectPosition: `${reviewsImageLayout.x}% ${reviewsImageLayout.y}%`,
+                      transformOrigin: `${reviewsImageLayout.x}% ${reviewsImageLayout.y}%`,
+                      transform: `scale(${reviewsImageLayout.scale})`,
+                    }}
                     width="600"
                     height="400"
                     loading="lazy"

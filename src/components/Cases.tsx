@@ -11,6 +11,7 @@ import { RevealOnScroll } from './RevealOnScroll';
 import { useEffect, useState } from 'react';
 import { fetchContent } from '@/lib/content';
 import type { Content } from '@/content/schema';
+import { normalizeCoverImageLayout } from '@/lib/imageLayout';
 import caseBarra from '@/assets/case-barra-tijuca.png';
 import caseRioOuro from '@/assets/case-rio-ouro.png';
 import caseSaoGoncalo from '@/assets/case-sao-goncalo.png';
@@ -29,13 +30,13 @@ export const Cases = () => {
   // Usa projetos do content.json se disponíveis, senão usa fallback
   const projects = content?.showcase.projects || [];
   const defaultCases = [
-    { image: caseBarra, tipo: 'Residencial', icon: Home, bairro: 'Barra da Tijuca', kwp: 8.54, modulos: 16, potenciaModulo: 550, economia: 14500 },
-    { image: caseRioOuro, tipo: 'Residencial', icon: Home, bairro: 'Rio do Ouro', kwp: 9.36, modulos: 17, potenciaModulo: 550, economia: 11793 },
-    { image: caseSaoGoncalo, tipo: 'Residencial', icon: Home, bairro: 'São Gonçalo', kwp: 4.56, modulos: 8, potenciaModulo: 570, economia: 6000 },
-    { image: caseDuqueCaxias, tipo: 'Comercial', icon: Building, bairro: 'Duque de Caxias - RJ', kwp: 13.68, modulos: 25, potenciaModulo: 550, economia: 18000 },
-    { image: caseMariaPaula, tipo: 'Residencial', icon: Home, bairro: 'Maria Paula - Niterói', kwp: 4.56, modulos: 8, potenciaModulo: 570, economia: 6000 },
-    { image: caseVeterinario, tipo: 'Comercial', icon: Building, bairro: 'Niterói - RJ', kwp: 40.7, modulos: 74, potenciaModulo: 550, economia: 55000 },
-    { image: caseSaoGoncalo2, tipo: 'Comercial', icon: Building, bairro: 'São Gonçalo - RJ', kwp: 31.23, modulos: 57, potenciaModulo: 550, economia: 67108 },
+    { image: caseBarra, tipo: 'Residencial', icon: Home, bairro: 'Barra da Tijuca', kwp: 8.54, modulos: 16, potenciaModulo: 550, economia: 14500, imageLayout: undefined },
+    { image: caseRioOuro, tipo: 'Residencial', icon: Home, bairro: 'Rio do Ouro', kwp: 9.36, modulos: 17, potenciaModulo: 550, economia: 11793, imageLayout: undefined },
+    { image: caseSaoGoncalo, tipo: 'Residencial', icon: Home, bairro: 'São Gonçalo', kwp: 4.56, modulos: 8, potenciaModulo: 570, economia: 6000, imageLayout: undefined },
+    { image: caseDuqueCaxias, tipo: 'Comercial', icon: Building, bairro: 'Duque de Caxias - RJ', kwp: 13.68, modulos: 25, potenciaModulo: 550, economia: 18000, imageLayout: undefined },
+    { image: caseMariaPaula, tipo: 'Residencial', icon: Home, bairro: 'Maria Paula - Niterói', kwp: 4.56, modulos: 8, potenciaModulo: 570, economia: 6000, imageLayout: undefined },
+    { image: caseVeterinario, tipo: 'Comercial', icon: Building, bairro: 'Niterói - RJ', kwp: 40.7, modulos: 74, potenciaModulo: 550, economia: 55000, imageLayout: undefined },
+    { image: caseSaoGoncalo2, tipo: 'Comercial', icon: Building, bairro: 'São Gonçalo - RJ', kwp: 31.23, modulos: 57, potenciaModulo: 550, economia: 67108, imageLayout: undefined },
   ];
 
   // Converte projetos do content.json para o formato esperado
@@ -49,6 +50,7 @@ export const Cases = () => {
         modulos: project.modulos,
         potenciaModulo: project.potenciaModulo,
         economia: project.economia,
+        imageLayout: project.imageLayout,
       }))
     : defaultCases;
 
@@ -78,7 +80,9 @@ export const Cases = () => {
             className="w-full"
           >
             <CarouselContent className="-ml-2 md:-ml-4">
-              {cases.map((caseItem, index) => (
+              {cases.map((caseItem, index) => {
+                const caseImageLayout = normalizeCoverImageLayout(caseItem.imageLayout);
+                return (
                 <CarouselItem key={index} className="pl-2 md:pl-4 basis-[90%] sm:basis-1/2 lg:basis-1/3">
                   <Card className="overflow-hidden bg-card-gradient border-border hover:border-primary/50 transition-all card-hover">
                     {/* Image */}
@@ -86,7 +90,12 @@ export const Cases = () => {
                       <img
                         src={typeof caseItem.image === 'string' && (caseItem.image.startsWith('/') || caseItem.image.startsWith('http')) ? caseItem.image : caseItem.image}
                         alt={`Projeto ${caseItem.tipo} em ${caseItem.bairro}`}
-                        className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
+                        className="w-full h-full object-cover transition-transform duration-500"
+                        style={{
+                          objectPosition: `${caseImageLayout.x}% ${caseImageLayout.y}%`,
+                          transformOrigin: `${caseImageLayout.x}% ${caseImageLayout.y}%`,
+                          transform: `scale(${caseImageLayout.scale})`,
+                        }}
                         width="400"
                         height="300"
                         loading="lazy"
@@ -130,7 +139,8 @@ export const Cases = () => {
                     </div>
                   </Card>
                 </CarouselItem>
-              ))}
+                );
+              })}
             </CarouselContent>
 
             {/* Navigation Arrows */}

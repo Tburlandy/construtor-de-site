@@ -1,5 +1,5 @@
 // Servidor Express para o Studio (API de conteúdo e uploads)
-import express from 'express';
+import express, { type Response } from 'express';
 import multer from 'multer';
 import sharp from 'sharp';
 import fs from 'fs/promises';
@@ -7,11 +7,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { z } from 'zod';
 import { ContentSchema, type Content } from './src/content/schema.js';
-import { ProjectSchema, type ProjectId } from './src/platform/contracts/index.js';
+import { ProjectSchema, type JsonValue, type ProjectId } from './src/platform/contracts/index.js';
 import { createProjectContentRepository } from './src/platform/repositories/projectContentRepository.js';
 import { createProjectMetadataRepository } from './src/platform/repositories/projectMetadataRepository.js';
 import { createProjectPublicationRepository } from './src/platform/repositories/projectPublicationRepository.js';
 import { createProjectSeoConfigRepository } from './src/platform/repositories/projectSeoConfigRepository.js';
+import { createProjectVersionRepository } from './src/platform/repositories/projectVersionRepository.js';
 import {
   buildProjectContentRecord,
   parseGlobalSiteContentJson,
@@ -28,7 +29,28 @@ import {
   getProjectById,
   listProjectPublications,
   listProjects,
+  updateProjectMetadata,
 } from './src/platform/studio/projectsStudioApi.js';
+import {
+  PublishConnectionPayloadSchema,
+  PublishOperationError,
+  createProjectZipExport,
+  publishProjectArtifact,
+  testPublishConnection,
+} from './studio-publish-service.js';
+import {
+  getProjectPublishConfig,
+  resolvePublishConnection,
+  saveProjectPublishConfig,
+} from './studio-publish-config-service.js';
+import {
+  ClientExportError,
+  enrichClientExportWithDownloadUrl,
+  exportClientZip,
+  getClientExportByFileName,
+  getLatestClientExport,
+  listClientExports,
+} from './src/platform/studio/clientExportService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,6 +68,9 @@ export const projectPublicationRepository = createProjectPublicationRepository({
   projectsRootDir: projectsDataRoot,
 });
 export const projectSeoConfigRepository = createProjectSeoConfigRepository({
+  projectsRootDir: projectsDataRoot,
+});
+export const projectVersionRepository = createProjectVersionRepository({
   projectsRootDir: projectsDataRoot,
 });
 
@@ -107,9 +132,20 @@ async function loadProjectScopedContent(projectIdRaw: string): Promise<Content> 
   };
 }
 
-async function saveProjectScopedContent(projectIdRaw: string, payload: unknown): Promise<Content> {
+async function saveProjectScopedContent(
+  projectIdRaw: string,
+  payload: unknown,
+  options?: { skipVersionSnapshot?: boolean },
+): Promise<Content> {
   const projectId = parseProjectIdOrThrow(projectIdRaw);
   const parsed = ContentSchema.parse(payload);
+  if (!options?.skipVersionSnapshot) {
+    const currentContent = await loadProjectScopedContent(projectId);
+    await projectVersionRepository.createSnapshot({
+      projectId,
+      content: currentContent as unknown as Record<string, JsonValue>,
+    });
+  }
   const record = buildProjectContentRecord({
     projectId,
     content: parsed,
@@ -124,12 +160,39 @@ async function saveProjectScopedContent(projectIdRaw: string, payload: unknown):
   return parsed;
 }
 
+type ProjectContentVersionSummary = {
+  versionId: string;
+  createdAt: string;
+};
+
+function toProjectContentVersionSummary(params: {
+  versionId: string;
+  createdAt: string;
+}): ProjectContentVersionSummary {
+  return {
+    versionId: params.versionId,
+    createdAt: params.createdAt,
+  };
+}
+
 function getProjectMediaDirectory(projectId: ProjectId, mediaKind: 'img' | 'vid'): string {
   return path.join(mediaProjectsPath, projectId, mediaKind);
 }
 
 function getProjectMediaUrl(projectId: ProjectId, mediaKind: 'img' | 'vid', filename: string): string {
   return `/media/projects/${projectId}/${mediaKind}/${filename}`;
+}
+
+function sendClientExportError(res: Response, error: unknown) {
+  if (error instanceof ClientExportError) {
+    res.status(error.statusCode).json({
+      error: error.message,
+      ...error.payload,
+    });
+    return;
+  }
+  console.error('Erro no fluxo de exportação ZIP:', error);
+  res.status(500).json({ error: 'Erro ao exportar ZIP do cliente' });
 }
 
 // Garantir que diretórios existem
@@ -191,6 +254,27 @@ app.post('/api/projects', async (req, res) => {
   }
 });
 
+// PUT /api/projects/:projectId — atualiza metadata mínima do projeto
+app.put('/api/projects/:projectId', async (req, res) => {
+  try {
+    const updated = await updateProjectMetadata(
+      projectMetadataRepository,
+      req.params.projectId,
+      req.body,
+    );
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    console.error('Erro ao atualizar projeto:', error);
+    res.status(500).json({ error: 'Erro ao atualizar projeto' });
+  }
+});
+
 // GET /api/projects/:projectId/publications — histórico básico de publicações
 app.get('/api/projects/:projectId/publications', async (req, res) => {
   try {
@@ -209,6 +293,205 @@ app.get('/api/projects/:projectId/publications', async (req, res) => {
     }
     console.error('Erro ao listar publicações do projeto:', error);
     res.status(500).json({ error: 'Erro ao listar publicações do projeto' });
+  }
+});
+
+// GET /api/projects/:projectId/export/zip — exportação de artefato em ZIP
+app.get('/api/projects/:projectId/export/zip', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.projectId);
+    const project = await projectMetadataRepository.getByProjectId(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Projeto não encontrado' });
+    }
+
+    const zipExport = await createProjectZipExport({
+      projectId,
+      projectsRootDir: projectsDataRoot,
+    });
+
+    res.download(zipExport.zipFilePath, zipExport.zipFileName, async (error) => {
+      await fs.unlink(zipExport.zipFilePath).catch(() => undefined);
+      if (!error) {
+        return;
+      }
+      console.error('Erro ao enviar ZIP do projeto:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Erro ao exportar ZIP do projeto' });
+      }
+    });
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao exportar ZIP do projeto:', error);
+    res.status(500).json({ error: 'Erro ao exportar ZIP do projeto' });
+  }
+});
+
+// POST /api/projects/:projectId/deploy/test-connection — valida conexão FTP/SFTP
+app.post('/api/projects/:projectId/deploy/test-connection', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.projectId);
+    const project = await projectMetadataRepository.getByProjectId(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Projeto não encontrado' });
+    }
+
+    const payload = PublishConnectionPayloadSchema.parse(req.body);
+    await testPublishConnection(payload);
+
+    res.json({
+      success: true,
+      message: `Conexão ${payload.provider.toUpperCase()} validada com sucesso.`,
+    });
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao testar conexão de publicação:', error);
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Falha no teste de conexão' });
+  }
+});
+
+// GET /api/projects/:projectId/publish-config — retorna configuração de publicação salva
+app.get('/api/projects/:projectId/publish-config', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.projectId);
+    const project = await projectMetadataRepository.getByProjectId(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Projeto não encontrado' });
+    }
+
+    const config = await getProjectPublishConfig({
+      projectId,
+      projectsRootDir: projectsDataRoot,
+    });
+    if (!config) {
+      return res.json({ configured: false });
+    }
+
+    res.json({
+      configured: true,
+      connection: config.connection,
+      updatedAt: config.updatedAt,
+    });
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    res.status(500).json({ error: 'Erro ao ler configuração de publicação do projeto' });
+  }
+});
+
+// PUT /api/projects/:projectId/publish-config — salva configuração de publicação
+app.put('/api/projects/:projectId/publish-config', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.projectId);
+    const project = await projectMetadataRepository.getByProjectId(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Projeto não encontrado' });
+    }
+
+    const payload = PublishConnectionPayloadSchema.parse(req.body);
+    const config = await saveProjectPublishConfig({
+      projectId,
+      projectsRootDir: projectsDataRoot,
+      connection: payload,
+    });
+
+    res.json({
+      configured: true,
+      connection: config.connection,
+      updatedAt: config.updatedAt,
+    });
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao salvar configuração de publicação do projeto:', error);
+    res.status(500).json({ error: 'Erro ao salvar configuração de publicação do projeto' });
+  }
+});
+
+// POST /api/projects/:projectId/publish — publica artefato para hospedagem compartilhada
+app.post('/api/projects/:projectId/publish', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.projectId);
+    const project = await projectMetadataRepository.getByProjectId(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Projeto não encontrado' });
+    }
+
+    const payload = await resolvePublishConnection({
+      projectId,
+      projectsRootDir: projectsDataRoot,
+      payload: req.body,
+    });
+    const result = await publishProjectArtifact({
+      projectId,
+      projectsRootDir: projectsDataRoot,
+      connection: payload,
+    });
+
+    res.json(result);
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof PublishOperationError) {
+      return res.status(500).json({
+        error: error.message,
+        publication: error.publication,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    if (
+      error instanceof Error &&
+      error.message === 'Configuração de publicação não encontrada para este cliente.'
+    ) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('Erro ao publicar projeto:', error);
+    res.status(500).json({ error: 'Falha ao publicar projeto' });
   }
 });
 
@@ -234,6 +517,256 @@ app.post('/api/projects/:projectId/duplicate', async (req, res) => {
   }
 });
 
+// POST /api/clients/:clientId/deploy/test-connection — alias em linguagem de cliente
+app.post('/api/clients/:clientId/deploy/test-connection', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.clientId);
+    const project = await projectMetadataRepository.getByProjectId(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Cliente não encontrado' });
+    }
+
+    const payload = PublishConnectionPayloadSchema.parse(req.body);
+    await testPublishConnection(payload);
+
+    res.json({
+      success: true,
+      message: `Conexão ${payload.provider.toUpperCase()} validada com sucesso.`,
+    });
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao testar conexão de publicação do cliente:', error);
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Falha no teste de conexão' });
+  }
+});
+
+// GET /api/clients/:clientId/publish-config — retorna configuração de publicação salva
+app.get('/api/clients/:clientId/publish-config', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.clientId);
+    const project = await projectMetadataRepository.getByProjectId(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Cliente não encontrado' });
+    }
+
+    const config = await getProjectPublishConfig({
+      projectId,
+      projectsRootDir: projectsDataRoot,
+    });
+    if (!config) {
+      return res.json({ configured: false });
+    }
+
+    res.json({
+      configured: true,
+      connection: config.connection,
+      updatedAt: config.updatedAt,
+    });
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    res.status(500).json({ error: 'Erro ao ler configuração de publicação do cliente' });
+  }
+});
+
+// PUT /api/clients/:clientId/publish-config — salva configuração de publicação
+app.put('/api/clients/:clientId/publish-config', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.clientId);
+    const project = await projectMetadataRepository.getByProjectId(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Cliente não encontrado' });
+    }
+
+    const payload = PublishConnectionPayloadSchema.parse(req.body);
+    const config = await saveProjectPublishConfig({
+      projectId,
+      projectsRootDir: projectsDataRoot,
+      connection: payload,
+    });
+
+    res.json({
+      configured: true,
+      connection: config.connection,
+      updatedAt: config.updatedAt,
+    });
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao salvar configuração de publicação do cliente:', error);
+    res.status(500).json({ error: 'Erro ao salvar configuração de publicação do cliente' });
+  }
+});
+
+// POST /api/clients/:clientId/publish — alias em linguagem de cliente
+app.post('/api/clients/:clientId/publish', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.clientId);
+    const project = await projectMetadataRepository.getByProjectId(projectId);
+    if (!project) {
+      return res.status(404).json({ error: 'Cliente não encontrado' });
+    }
+
+    const payload = await resolvePublishConnection({
+      projectId,
+      projectsRootDir: projectsDataRoot,
+      payload: req.body,
+    });
+    const result = await publishProjectArtifact({
+      projectId,
+      projectsRootDir: projectsDataRoot,
+      connection: payload,
+    });
+
+    res.json(result);
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof PublishOperationError) {
+      return res.status(500).json({
+        error: error.message,
+        publication: error.publication,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    if (
+      error instanceof Error &&
+      error.message === 'Configuração de publicação não encontrada para este cliente.'
+    ) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error('Erro ao publicar cliente:', error);
+    res.status(500).json({ error: 'Falha ao publicar cliente' });
+  }
+});
+
+// POST /api/clients/:clientId/export-zip — gera build estático e compacta ZIP do cliente
+app.post('/api/clients/:clientId/export-zip', async (req, res) => {
+  try {
+    const result = await exportClientZip(req.params.clientId);
+    res.status(201).json({
+      clientId: result.clientId,
+      buildPath: result.buildPath,
+      buildConfig: result.buildConfig,
+      zip: enrichClientExportWithDownloadUrl(result.zip),
+    });
+  } catch (error) {
+    sendClientExportError(res, error);
+  }
+});
+
+// GET /api/clients/:clientId/exports — lista exports ZIP disponíveis do cliente
+app.get('/api/clients/:clientId/exports', async (req, res) => {
+  try {
+    const items = await listClientExports(req.params.clientId);
+    res.json(items.map((item) => enrichClientExportWithDownloadUrl(item)));
+  } catch (error) {
+    sendClientExportError(res, error);
+  }
+});
+
+// GET /api/clients/:clientId/exports/latest — retorna metadado do ZIP mais recente
+app.get('/api/clients/:clientId/exports/latest', async (req, res) => {
+  try {
+    const item = await getLatestClientExport(req.params.clientId);
+    if (!item) {
+      return res.status(404).json({ error: 'Nenhum ZIP de exportação disponível para este cliente.' });
+    }
+    res.json(enrichClientExportWithDownloadUrl(item));
+  } catch (error) {
+    sendClientExportError(res, error);
+  }
+});
+
+// GET /api/clients/:clientId/exports/:fileName/download — download de ZIP por arquivo
+app.get('/api/clients/:clientId/exports/:fileName/download', async (req, res) => {
+  try {
+    const item = await getClientExportByFileName(req.params.clientId, req.params.fileName);
+    res.download(item.absolutePath, item.fileName);
+  } catch (error) {
+    sendClientExportError(res, error);
+  }
+});
+
+// Compatibilidade: mesma exportação usando namespace legado `/api/projects`.
+app.post('/api/projects/:projectId/export-zip', async (req, res) => {
+  try {
+    const result = await exportClientZip(req.params.projectId);
+    res.status(201).json({
+      clientId: result.clientId,
+      buildPath: result.buildPath,
+      buildConfig: result.buildConfig,
+      zip: enrichClientExportWithDownloadUrl(result.zip),
+    });
+  } catch (error) {
+    sendClientExportError(res, error);
+  }
+});
+
+app.get('/api/projects/:projectId/exports', async (req, res) => {
+  try {
+    const items = await listClientExports(req.params.projectId);
+    res.json(items.map((item) => enrichClientExportWithDownloadUrl(item)));
+  } catch (error) {
+    sendClientExportError(res, error);
+  }
+});
+
+app.get('/api/projects/:projectId/exports/latest', async (req, res) => {
+  try {
+    const item = await getLatestClientExport(req.params.projectId);
+    if (!item) {
+      return res.status(404).json({ error: 'Nenhum ZIP de exportação disponível para este cliente.' });
+    }
+    res.json(enrichClientExportWithDownloadUrl(item));
+  } catch (error) {
+    sendClientExportError(res, error);
+  }
+});
+
+app.get('/api/projects/:projectId/exports/:fileName/download', async (req, res) => {
+  try {
+    const item = await getClientExportByFileName(req.params.projectId, req.params.fileName);
+    res.download(item.absolutePath, item.fileName);
+  } catch (error) {
+    sendClientExportError(res, error);
+  }
+});
+
 // GET /api/projects/:projectId/content — conteúdo no escopo do projeto (fallback legado)
 app.get('/api/projects/:projectId/content', async (req, res) => {
   try {
@@ -248,6 +781,31 @@ app.get('/api/projects/:projectId/content', async (req, res) => {
     }
     console.error('Erro ao ler conteúdo do projeto:', error);
     res.status(500).json({ error: 'Erro ao ler conteúdo do projeto' });
+  }
+});
+
+// GET /api/projects/:projectId/versions — lista versões de conteúdo do projeto
+app.get('/api/projects/:projectId/versions', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.projectId);
+    const items = await projectVersionRepository.listByProjectId(projectId);
+    res.json(
+      items.map((item) =>
+        toProjectContentVersionSummary({
+          versionId: item.versionId,
+          createdAt: item.createdAt,
+        }),
+      ),
+    );
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    console.error('Erro ao listar versões do projeto:', error);
+    res.status(500).json({ error: 'Erro ao listar versões do projeto' });
   }
 });
 
@@ -271,6 +829,46 @@ app.put('/api/projects/:projectId/content', async (req, res) => {
     }
     console.error('Erro ao salvar conteúdo do projeto:', error);
     res.status(500).json({ error: 'Erro ao salvar conteúdo do projeto' });
+  }
+});
+
+// POST /api/projects/:projectId/versions/:versionId/restore — restaura versão no conteúdo atual
+app.post('/api/projects/:projectId/versions/:versionId/restore', async (req, res) => {
+  try {
+    const projectId = parseProjectIdOrThrow(req.params.projectId);
+    const sourceVersion = await projectVersionRepository.getByProjectIdAndVersionId(
+      projectId,
+      req.params.versionId,
+    );
+    if (!sourceVersion) {
+      return res.status(404).json({ error: 'Versão não encontrada' });
+    }
+
+    const currentContent = await loadProjectScopedContent(projectId);
+    await projectVersionRepository.createSnapshot({
+      projectId,
+      content: currentContent as unknown as Record<string, JsonValue>,
+    });
+
+    const restored = await saveProjectScopedContent(projectId, sourceVersion.content, {
+      skipVersionSnapshot: true,
+    });
+    res.json(restored);
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Versão inválida para restauração',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao restaurar versão do projeto:', error);
+    res.status(500).json({ error: 'Erro ao restaurar versão do projeto' });
   }
 });
 

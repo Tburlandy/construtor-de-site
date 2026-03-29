@@ -43,7 +43,7 @@ export const BUILDER_SECTIONS: BuilderSection[] = [
   {
     id: 'benefits',
     title: 'Benefícios',
-    description: 'Blocos de benefício da proposta.',
+    description: 'Blocos de benefício do site.',
     group: 'Conteúdo',
     editable: true,
   },

@@ -151,11 +151,11 @@ export const Calculator = ({ onOpenPopup }: CalculatorProps) => {
                     size="lg"
                   className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold btn-press text-sm sm:text-base h-12"
                   >
-                    ⚡ Receber proposta personalizada
+                    ⚡ Receber site personalizado
                   </Button>
 
                 <p className="text-xs text-muted-foreground text-center mt-3 md:mt-4">
-                  * Valores estimados. Proposta final depende de análise técnica detalhada.
+                  * Valores estimados. Configuração final do site depende de análise técnica detalhada.
                 </p>
               </div>
             )}

@@ -17,6 +17,12 @@ export {
 } from './projectPublicationRepository';
 
 export {
+  createProjectVersionRepository,
+  type CreateProjectVersionRepositoryParams,
+  type ProjectVersionRepository,
+} from './projectVersionRepository';
+
+export {
   createProjectSeoConfigRepository,
   type CreateProjectSeoConfigRepositoryParams,
   type ProjectSeoConfigRepository,

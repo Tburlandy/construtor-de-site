@@ -7,6 +7,12 @@ const BenefitSchema = z.object({
   text: z.string(),
 });
 
+const ProjectImageLayoutSchema = z.object({
+  scale: z.number().min(1).max(2.5).optional(),
+  x: z.number().min(0).max(100).optional(),
+  y: z.number().min(0).max(100).optional(),
+});
+
 // Schema para projetos/showcase
 const ProjectSchema = z.object({
   image: z.string(),
@@ -15,10 +21,41 @@ const ProjectSchema = z.object({
   modulos: z.number().min(0),
   potenciaModulo: z.number().min(0),
   economia: z.number().min(0),
+  imageLayout: ProjectImageLayoutSchema.optional(),
 });
 
 const ShowcaseSchema = z.object({
   projects: z.array(ProjectSchema),
+});
+
+const LogoImageLayoutSchema = z.object({
+  scale: z.number().min(0.6).max(2.5).optional(),
+  x: z.number().min(-120).max(120).optional(),
+  y: z.number().min(-80).max(80).optional(),
+});
+
+const CoverImageLayoutSchema = z.object({
+  scale: z.number().min(1).max(2.5).optional(),
+  x: z.number().min(0).max(100).optional(),
+  y: z.number().min(0).max(100).optional(),
+});
+
+const StatItemSchema = z.object({
+  value: z.string(),
+  label: z.string(),
+});
+
+const SimpleTextItemSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+});
+
+const ImageLayoutSchema = z.object({
+  logo: LogoImageLayoutSchema.optional(),
+  heroBackground: CoverImageLayoutSchema.optional(),
+  howItWorks: CoverImageLayoutSchema.optional(),
+  proofBar: CoverImageLayoutSchema.optional(),
+  fullService: CoverImageLayoutSchema.optional(),
 });
 
 // Schema para especialista
@@ -40,6 +77,7 @@ const TestimonialSchema = z.object({
 export const ContentSchema = z.object({
   global: z.object({
     brand: z.string(),
+    logo: z.string().optional(),
     city: z.string(),
     whatsappE164: z.string(),
     cnpj: z.string(),
@@ -63,19 +101,60 @@ export const ContentSchema = z.object({
     headline: z.string(),
     subheadline: z.string(),
     ctaLabel: z.string(),
+    secondaryCtaLabel: z.string().optional(),
+    floatingCtaLabel: z.string().optional(),
+    stats: z.array(StatItemSchema).optional(),
     background: z.string(),
   }),
+  financing: z
+    .object({
+      badge: z.string(),
+      titlePrefix: z.string(),
+      titleHighlight: z.string(),
+      subtitle: z.string(),
+      items: z.array(SimpleTextItemSchema),
+      ctaLabel: z.string(),
+    })
+    .optional(),
   benefits: z.array(BenefitSchema),
   showcase: ShowcaseSchema,
   howItWorks: z.object({
     image: z.string(),
+    titlePrefix: z.string().optional(),
+    titleHighlight: z.string().optional(),
+    subtitle: z.string().optional(),
+    steps: z
+      .array(
+        z.object({
+          number: z.string(),
+          title: z.string(),
+          description: z.string(),
+        }),
+      )
+      .optional(),
   }).optional(),
   proofBar: z.object({
     image: z.string(),
+    titlePrefix: z.string().optional(),
+    titleHighlight: z.string().optional(),
+    titleSuffix: z.string().optional(),
+    description: z.string().optional(),
+    cards: z.array(SimpleTextItemSchema).optional(),
+    primaryCtaLabel: z.string().optional(),
+    secondaryCtaLabel: z.string().optional(),
+    imageAlt: z.string().optional(),
   }).optional(),
   fullService: z.object({
     image: z.string(),
+    badge: z.string().optional(),
+    titlePrefix: z.string().optional(),
+    titleHighlight: z.string().optional(),
+    description: z.string().optional(),
+    services: z.array(SimpleTextItemSchema).optional(),
+    ctaLabel: z.string().optional(),
+    imageAlt: z.string().optional(),
   }).optional(),
+  imageLayout: ImageLayoutSchema.optional(),
 });
 
 export type Content = z.infer<typeof ContentSchema>;
@@ -83,3 +162,6 @@ export type Benefit = z.infer<typeof BenefitSchema>;
 export type Testimonial = z.infer<typeof TestimonialSchema>;
 export type Expert = z.infer<typeof ExpertSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
+export type LogoImageLayout = z.infer<typeof LogoImageLayoutSchema>;
+export type CoverImageLayout = z.infer<typeof CoverImageLayoutSchema>;
+export type ImageLayout = z.infer<typeof ImageLayoutSchema>;

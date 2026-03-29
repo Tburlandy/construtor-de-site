@@ -11,10 +11,10 @@ import type { ProjectMetadataRepository } from '../repositories/projectMetadataR
 import type { ProjectPublicationRepository } from '../repositories/projectPublicationRepository';
 
 const CreateProjectBodySchema = ProjectMetadataSchema.pick({
-  projectId: true,
   name: true,
-  slug: true,
 }).extend({
+  projectId: ProjectSchema.shape.projectId.optional(),
+  slug: ProjectMetadataSchema.shape.slug.optional(),
   description: ProjectMetadataSchema.shape.description,
   status: ProjectMetadataSchema.shape.status.optional().default('draft'),
 });
@@ -22,8 +22,11 @@ const CreateProjectBodySchema = ProjectMetadataSchema.pick({
 const DuplicateProjectBodySchema = z.object({
   targetProjectId: ProjectSchema.shape.projectId,
   name: ProjectMetadataSchema.shape.name.optional(),
-  slug: ProjectMetadataSchema.shape.slug.optional(),
   description: ProjectMetadataSchema.shape.description,
+});
+
+const UpdateProjectMetadataBodySchema = z.object({
+  name: ProjectMetadataSchema.shape.name,
 });
 
 export class ProjectsApiError extends Error {
@@ -42,11 +45,56 @@ export class ProjectsApiError extends Error {
 export type CreateProjectBody = z.input<typeof CreateProjectBodySchema>;
 /** Corpo esperado em `POST /api/projects/:projectId/duplicate`. */
 export type DuplicateProjectBody = z.input<typeof DuplicateProjectBodySchema>;
+/** Corpo esperado em `PUT /api/projects/:projectId`. */
+export type UpdateProjectMetadataBody = z.input<typeof UpdateProjectMetadataBodySchema>;
 
-function buildNewProjectMetadata(body: unknown, now: string): ProjectMetadata {
+function normalizeIdentifier(value: string, fallback = 'cliente'): string {
+  const normalized = value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || fallback;
+}
+
+function ensureUniqueIdentifier(base: string, taken: Set<string>): string {
+  const normalizedBase = normalizeIdentifier(base);
+  if (!taken.has(normalizedBase)) {
+    return normalizedBase;
+  }
+
+  let suffix = 2;
+  while (taken.has(`${normalizedBase}-${suffix}`)) {
+    suffix += 1;
+  }
+  return `${normalizedBase}-${suffix}`;
+}
+
+function buildNewProjectMetadata(
+  body: unknown,
+  existingProjects: ProjectMetadata[],
+  now: string,
+): ProjectMetadata {
   const parsed = CreateProjectBodySchema.parse(body);
+  const existingProjectIds = new Set(existingProjects.map((item) => item.projectId));
+  const existingSlugs = new Set(existingProjects.map((item) => item.slug));
+  const providedProjectId = parsed.projectId?.trim();
+  const projectId = providedProjectId
+    ? parseProjectIdOrThrow(providedProjectId)
+    : ensureUniqueIdentifier(parsed.name, existingProjectIds);
+
+  if (existingProjectIds.has(projectId)) {
+    throw new ProjectsApiError(409, 'Já existe projeto com este id', {
+      projectId,
+    });
+  }
+
+  const slug = ensureUniqueIdentifier(parsed.slug?.trim() || parsed.name, existingSlugs);
   return ProjectMetadataSchema.parse({
     ...parsed,
+    projectId,
+    slug,
     createdAt: now,
     updatedAt: now,
   });
@@ -83,10 +131,14 @@ export async function createProject(
   body: unknown,
 ): Promise<ProjectMetadata> {
   const now = new Date().toISOString();
+  const existingProjects = await repo.list();
   let metadata: ProjectMetadata;
   try {
-    metadata = buildNewProjectMetadata(body, now);
+    metadata = buildNewProjectMetadata(body, existingProjects, now);
   } catch (err) {
+    if (err instanceof ProjectsApiError) {
+      throw err;
+    }
     if (err instanceof z.ZodError) {
       throw new ProjectsApiError(400, 'Payload inválido', {
         details: err.flatten(),
@@ -103,6 +155,41 @@ export async function createProject(
   }
 
   return repo.save(metadata);
+}
+
+export async function updateProjectMetadata(
+  repo: ProjectMetadataRepository,
+  projectId: string,
+  body: unknown,
+): Promise<ProjectMetadata> {
+  const parsedProjectId = parseProjectIdOrThrow(projectId);
+  const current = await repo.getByProjectId(parsedProjectId);
+  if (!current) {
+    throw new ProjectsApiError(404, 'Projeto não encontrado', {
+      projectId: parsedProjectId,
+    });
+  }
+
+  let parsedBody: UpdateProjectMetadataBody;
+  try {
+    parsedBody = UpdateProjectMetadataBodySchema.parse(body);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      throw new ProjectsApiError(400, 'Payload inválido', {
+        details: err.flatten(),
+      });
+    }
+    throw err;
+  }
+
+  const now = new Date().toISOString();
+  const updated = ProjectMetadataSchema.parse({
+    ...current,
+    name: parsedBody.name.trim(),
+    updatedAt: now,
+  });
+
+  return repo.save(updated);
 }
 
 export async function listProjectPublications(
@@ -159,12 +246,15 @@ export async function duplicateProject(
     });
   }
 
+  const existingProjects = await metadataRepo.list();
+  const existingSlugs = new Set(existingProjects.map((item) => item.slug));
   const now = new Date().toISOString();
+  const duplicatedName = parsedBody.name?.trim() || `${sourceMetadata.name} (cópia)`;
   const targetMetadata = ProjectMetadataSchema.parse({
     ...sourceMetadata,
     projectId: targetProjectId,
-    name: parsedBody.name?.trim() || `${sourceMetadata.name} (cópia)`,
-    slug: parsedBody.slug?.trim() || `${sourceMetadata.slug}-copia`,
+    name: duplicatedName,
+    slug: ensureUniqueIdentifier(duplicatedName, existingSlugs),
     description:
       parsedBody.description !== undefined ? parsedBody.description : sourceMetadata.description,
     status: 'draft',

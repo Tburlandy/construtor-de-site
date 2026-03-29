@@ -3,6 +3,7 @@ import { trackCTAPopupOpen } from '@/lib/gtm';
 import heroImage from '@/assets/hero-solar-panels.jpg';
 import { BlackNovemberBanner } from './BlackNovemberBanner';
 import type { Content } from '@/content/schema';
+import { normalizeCoverImageLayout } from '@/lib/imageLayout';
 
 interface HeroProps {
   onOpenPopup: () => void;
@@ -15,6 +16,7 @@ export const Hero = ({ onOpenPopup, content }: HeroProps) => {
   const subheadline = content?.hero.subheadline || '☀️ Instalação rápida, equipe especializada e condições acessíveis para transformar sua economia.';
   const ctaLabel = content?.hero.ctaLabel || 'Orçamento gratuito';
   const backgroundImage = content?.hero.background || heroImage;
+  const heroImageLayout = normalizeCoverImageLayout(content?.imageLayout?.heroBackground);
   const handlePrimaryCTA = () => {
     trackCTAPopupOpen('hero');
     onOpenPopup();
@@ -37,10 +39,15 @@ export const Hero = ({ onOpenPopup, content }: HeroProps) => {
           src={backgroundImage.startsWith('/') || backgroundImage.startsWith('http') ? backgroundImage : heroImage} 
           alt="Painéis solares fotovoltaicos instalados" 
           className="w-full h-full object-cover"
+          style={{
+            objectPosition: `${heroImageLayout.x}% ${heroImageLayout.y}%`,
+            transform: `scale(${heroImageLayout.scale})`,
+            transformOrigin: `${heroImageLayout.x}% ${heroImageLayout.y}%`,
+          }}
           width="1920"
           height="1080"
           loading="eager"
-          fetchpriority="high"
+          fetchPriority="high"
           decoding="async"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-background/95 via-background/85 to-background/95" />

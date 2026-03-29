@@ -21,9 +21,10 @@ function normalizeBasePath(rawPath: string | undefined): string {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const projectId = (env.VITE_PROJECT_ID || env.PROJECT_ID || DEFAULT_PROJECT_ID).trim();
-  const projectBasePath = normalizeBasePath(
-    env.VITE_PROJECT_BASE_PATH || env.PROJECT_BASE_PATH || env.BASE_PATH,
-  );
+  const studioEnabled = mode === 'development' || env.VITE_STUDIO_ENABLED === 'true';
+  const projectBasePath = mode === 'development'
+    ? '/'
+    : normalizeBasePath(env.VITE_PROJECT_BASE_PATH || env.PROJECT_BASE_PATH || env.BASE_PATH);
   const projectDomain = (env.VITE_PROJECT_DOMAIN || env.PROJECT_DOMAIN || "").trim();
 
   return {
@@ -49,6 +50,7 @@ export default defineConfig(({ mode }) => {
       mode === "development" && studioPlugin(),
     ].filter(Boolean),
     define: {
+      __STUDIO_ENABLED__: JSON.stringify(studioEnabled),
       __PROJECT_BUILD_CONFIG__: JSON.stringify({
         projectId,
         basePath: projectBasePath,

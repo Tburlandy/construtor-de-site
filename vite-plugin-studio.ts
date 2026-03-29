@@ -1,17 +1,19 @@
 // Plugin Vite para integrar API do Studio
 import type { Plugin } from 'vite';
 import fs from 'fs/promises';
+import { createReadStream } from 'node:fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { z } from 'zod';
 import multer from 'multer';
 import sharp from 'sharp';
 import { ContentSchema, type Content } from './src/content/schema.js';
-import { ProjectSchema, type ProjectId } from './src/platform/contracts/index.js';
+import { ProjectSchema, type JsonValue, type ProjectId } from './src/platform/contracts/index.js';
 import { createProjectContentRepository } from './src/platform/repositories/projectContentRepository.js';
 import { createProjectMetadataRepository } from './src/platform/repositories/projectMetadataRepository.js';
 import { createProjectPublicationRepository } from './src/platform/repositories/projectPublicationRepository.js';
 import { createProjectSeoConfigRepository } from './src/platform/repositories/projectSeoConfigRepository.js';
+import { createProjectVersionRepository } from './src/platform/repositories/projectVersionRepository.js';
 import {
   buildProjectContentRecord,
   parseGlobalSiteContentJson,
@@ -28,7 +30,28 @@ import {
   getProjectById,
   listProjectPublications,
   listProjects,
+  updateProjectMetadata,
 } from './src/platform/studio/projectsStudioApi.js';
+import {
+  PublishConnectionPayloadSchema,
+  PublishOperationError,
+  createProjectZipExport,
+  publishProjectArtifact,
+  testPublishConnection,
+} from './studio-publish-service.js';
+import {
+  getProjectPublishConfig,
+  resolvePublishConnection,
+  saveProjectPublishConfig,
+} from './studio-publish-config-service.js';
+import {
+  ClientExportError,
+  enrichClientExportWithDownloadUrl,
+  exportClientZip,
+  getClientExportByFileName,
+  getLatestClientExport,
+  listClientExports,
+} from './src/platform/studio/clientExportService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -85,6 +108,49 @@ export function studioPlugin(): Plugin {
       const projectSeoConfigRepository = createProjectSeoConfigRepository({
         projectsRootDir: projectsDataRoot,
       });
+      const projectVersionRepository = createProjectVersionRepository({
+        projectsRootDir: projectsDataRoot,
+      });
+
+      const loadProjectScopedContent = async (projectId: ProjectId): Promise<Content> => {
+        const record = await projectContentRepository.getByProjectId(projectId);
+        const baseContent = record ? siteContentFromRecord(record) : await readLegacyContent(contentPath);
+        const seoConfig = await projectSeoConfigRepository.getByProjectId(projectId);
+        if (!seoConfig) {
+          return baseContent;
+        }
+        return {
+          ...baseContent,
+          seo: siteSeoFromProjectSeoConfig(seoConfig),
+        };
+      };
+
+      const saveProjectScopedContent = async (
+        projectId: ProjectId,
+        payload: unknown,
+        options?: { skipVersionSnapshot?: boolean },
+      ): Promise<Content> => {
+        const content = ContentSchema.parse(payload);
+        if (!options?.skipVersionSnapshot) {
+          const currentContent = await loadProjectScopedContent(projectId);
+          await projectVersionRepository.createSnapshot({
+            projectId,
+            content: currentContent as unknown as Record<string, JsonValue>,
+          });
+        }
+        const record = buildProjectContentRecord({
+          projectId,
+          content,
+        });
+        await projectContentRepository.save(record);
+        await projectSeoConfigRepository.save(
+          buildProjectSeoConfig({
+            projectId,
+            seo: content.seo,
+          }),
+        );
+        return content;
+      };
 
       async function ensureDirectories() {
         await fs.mkdir(mediaImgPath, { recursive: true });
@@ -104,6 +170,229 @@ export function studioPlugin(): Plugin {
         },
       });
       const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+      // /api/clients — fluxo de exportação estática/ZIP por cliente
+      server.middlewares.use(async (req, res, next) => {
+        const rawUrl = req.url ?? '/';
+        const pathname = new URL(rawUrl, 'http://studio.dev').pathname;
+        if (!pathname.startsWith('/api/clients')) {
+          return next();
+        }
+
+        const base = '/api/clients';
+        const rest = pathname.slice(base.length);
+        const segments = rest.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+
+        const sendJson = (status: number, data: unknown) => {
+          res.statusCode = status;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(data));
+        };
+
+        try {
+          if (
+            req.method === 'POST' &&
+            segments.length === 3 &&
+            segments[1] === 'deploy' &&
+            segments[2] === 'test-connection'
+          ) {
+            let body = '';
+            await new Promise<void>((resolve, reject) => {
+              req.on('data', (chunk) => {
+                body += chunk.toString();
+              });
+              req.on('end', () => resolve());
+              req.on('error', reject);
+            });
+
+            let parsedBody: unknown;
+            try {
+              parsedBody = body.length > 0 ? JSON.parse(body) : {};
+            } catch {
+              return sendJson(400, { error: 'JSON inválido' });
+            }
+
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Cliente não encontrado' });
+            }
+
+            const payload = PublishConnectionPayloadSchema.parse(parsedBody);
+            await testPublishConnection(payload);
+            return sendJson(200, {
+              success: true,
+              message: `Conexão ${payload.provider.toUpperCase()} validada com sucesso.`,
+            });
+          }
+
+          if (req.method === 'GET' && segments.length === 2 && segments[1] === 'publish-config') {
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Cliente não encontrado' });
+            }
+
+            const config = await getProjectPublishConfig({
+              projectId,
+              projectsRootDir: projectsDataRoot,
+            });
+            if (!config) {
+              return sendJson(200, { configured: false });
+            }
+
+            return sendJson(200, {
+              configured: true,
+              connection: config.connection,
+              updatedAt: config.updatedAt,
+            });
+          }
+
+          if (req.method === 'PUT' && segments.length === 2 && segments[1] === 'publish-config') {
+            let body = '';
+            await new Promise<void>((resolve, reject) => {
+              req.on('data', (chunk) => {
+                body += chunk.toString();
+              });
+              req.on('end', () => resolve());
+              req.on('error', reject);
+            });
+
+            let parsedBody: unknown;
+            try {
+              parsedBody = body.length > 0 ? JSON.parse(body) : {};
+            } catch {
+              return sendJson(400, { error: 'JSON inválido' });
+            }
+
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Cliente não encontrado' });
+            }
+
+            const payload = PublishConnectionPayloadSchema.parse(parsedBody);
+            const config = await saveProjectPublishConfig({
+              projectId,
+              projectsRootDir: projectsDataRoot,
+              connection: payload,
+            });
+            return sendJson(200, {
+              configured: true,
+              connection: config.connection,
+              updatedAt: config.updatedAt,
+            });
+          }
+
+          if (req.method === 'POST' && segments.length === 2 && segments[1] === 'publish') {
+            let body = '';
+            await new Promise<void>((resolve, reject) => {
+              req.on('data', (chunk) => {
+                body += chunk.toString();
+              });
+              req.on('end', () => resolve());
+              req.on('error', reject);
+            });
+
+            let parsedBody: unknown;
+            try {
+              parsedBody = body.length > 0 ? JSON.parse(body) : {};
+            } catch {
+              return sendJson(400, { error: 'JSON inválido' });
+            }
+
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Cliente não encontrado' });
+            }
+
+            const payload = await resolvePublishConnection({
+              projectId,
+              projectsRootDir: projectsDataRoot,
+              payload: parsedBody,
+            });
+            const result = await publishProjectArtifact({
+              projectId,
+              projectsRootDir: projectsDataRoot,
+              connection: payload,
+            });
+            return sendJson(200, result);
+          }
+
+          if (req.method === 'POST' && segments.length === 2 && segments[1] === 'export-zip') {
+            const result = await exportClientZip(segments[0]);
+            return sendJson(201, {
+              clientId: result.clientId,
+              buildPath: result.buildPath,
+              buildConfig: result.buildConfig,
+              zip: enrichClientExportWithDownloadUrl(result.zip),
+            });
+          }
+
+          if (req.method === 'GET' && segments.length === 2 && segments[1] === 'exports') {
+            const items = await listClientExports(segments[0]);
+            return sendJson(
+              200,
+              items.map((item) => enrichClientExportWithDownloadUrl(item)),
+            );
+          }
+
+          if (req.method === 'GET' && segments.length === 3 && segments[1] === 'exports' && segments[2] === 'latest') {
+            const item = await getLatestClientExport(segments[0]);
+            if (!item) {
+              return sendJson(404, {
+                error: 'Nenhum ZIP de exportação disponível para este cliente.',
+              });
+            }
+            return sendJson(200, enrichClientExportWithDownloadUrl(item));
+          }
+
+          if (
+            req.method === 'GET' &&
+            segments.length === 4 &&
+            segments[1] === 'exports' &&
+            segments[3] === 'download'
+          ) {
+            const item = await getClientExportByFileName(segments[0], segments[2]);
+            const fileBuffer = await fs.readFile(item.absolutePath);
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/zip');
+            res.setHeader('Content-Disposition', `attachment; filename="${item.fileName}"`);
+            res.end(fileBuffer);
+            return;
+          }
+
+          return sendJson(405, { error: 'Método não permitido' });
+        } catch (error) {
+          if (error instanceof PublishOperationError) {
+            return sendJson(500, {
+              error: error.message,
+              publication: error.publication,
+            });
+          }
+          if (error instanceof z.ZodError) {
+            return sendJson(400, {
+              error: 'Payload inválido',
+              details: error.flatten(),
+            });
+          }
+          if (error instanceof ClientExportError) {
+            return sendJson(error.statusCode, {
+              error: error.message,
+              ...error.payload,
+            });
+          }
+          if (
+            error instanceof Error &&
+            error.message === 'Configuração de publicação não encontrada para este cliente.'
+          ) {
+            return sendJson(400, { error: error.message });
+          }
+          console.error('Erro em /api/clients:', error);
+          return sendJson(500, { error: 'Erro ao processar exportação do cliente' });
+        }
+      });
 
       // /api/projects — shell de gestão e fluxo de conteúdo/mídia por projeto
       server.middlewares.use(async (req, res, next) => {
@@ -184,6 +473,19 @@ export function studioPlugin(): Plugin {
             return sendJson(200, item);
           }
 
+          if (req.method === 'PUT' && segments.length === 1) {
+            const parsed = await readBody();
+            if (parsed === INVALID_JSON) {
+              return sendJson(400, { error: 'JSON inválido' });
+            }
+            const updated = await updateProjectMetadata(
+              projectMetadataRepository,
+              segments[0],
+              parsed,
+            );
+            return sendJson(200, updated);
+          }
+
           if (req.method === 'GET' && segments.length === 2 && segments[1] === 'publications') {
             const items = await listProjectPublications(
               projectMetadataRepository,
@@ -191,6 +493,140 @@ export function studioPlugin(): Plugin {
               segments[0],
             );
             return sendJson(200, items);
+          }
+
+          if (
+            req.method === 'GET' &&
+            segments.length === 3 &&
+            segments[1] === 'export' &&
+            segments[2] === 'zip'
+          ) {
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Projeto não encontrado' });
+            }
+
+            const zipExport = await createProjectZipExport({
+              projectId,
+              projectsRootDir: projectsDataRoot,
+            });
+
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/zip');
+            res.setHeader('Content-Disposition', `attachment; filename="${zipExport.zipFileName}"`);
+
+            const fileStream = createReadStream(zipExport.zipFilePath);
+            fileStream.on('error', async (error) => {
+              console.error('Erro ao enviar ZIP do projeto:', error);
+              if (!res.headersSent) {
+                sendJson(500, { error: 'Erro ao exportar ZIP do projeto' });
+              } else {
+                res.end();
+              }
+            });
+            fileStream.on('close', async () => {
+              await fs.unlink(zipExport.zipFilePath).catch(() => undefined);
+            });
+            fileStream.pipe(res);
+            return;
+          }
+
+          if (
+            req.method === 'POST' &&
+            segments.length === 3 &&
+            segments[1] === 'deploy' &&
+            segments[2] === 'test-connection'
+          ) {
+            const parsed = await readBody();
+            if (parsed === INVALID_JSON) {
+              return sendJson(400, { error: 'JSON inválido' });
+            }
+
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Projeto não encontrado' });
+            }
+
+            const payload = PublishConnectionPayloadSchema.parse(parsed);
+            await testPublishConnection(payload);
+            return sendJson(200, {
+              success: true,
+              message: `Conexão ${payload.provider.toUpperCase()} validada com sucesso.`,
+            });
+          }
+
+          if (req.method === 'GET' && segments.length === 2 && segments[1] === 'publish-config') {
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Projeto não encontrado' });
+            }
+
+            const config = await getProjectPublishConfig({
+              projectId,
+              projectsRootDir: projectsDataRoot,
+            });
+            if (!config) {
+              return sendJson(200, { configured: false });
+            }
+
+            return sendJson(200, {
+              configured: true,
+              connection: config.connection,
+              updatedAt: config.updatedAt,
+            });
+          }
+
+          if (req.method === 'PUT' && segments.length === 2 && segments[1] === 'publish-config') {
+            const parsed = await readBody();
+            if (parsed === INVALID_JSON) {
+              return sendJson(400, { error: 'JSON inválido' });
+            }
+
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Projeto não encontrado' });
+            }
+
+            const payload = PublishConnectionPayloadSchema.parse(parsed);
+            const config = await saveProjectPublishConfig({
+              projectId,
+              projectsRootDir: projectsDataRoot,
+              connection: payload,
+            });
+            return sendJson(200, {
+              configured: true,
+              connection: config.connection,
+              updatedAt: config.updatedAt,
+            });
+          }
+
+          if (req.method === 'POST' && segments.length === 2 && segments[1] === 'publish') {
+            const parsed = await readBody();
+            if (parsed === INVALID_JSON) {
+              return sendJson(400, { error: 'JSON inválido' });
+            }
+
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Projeto não encontrado' });
+            }
+
+            const payload = await resolvePublishConnection({
+              projectId,
+              projectsRootDir: projectsDataRoot,
+              payload: parsed,
+            });
+            const result = await publishProjectArtifact({
+              projectId,
+              projectsRootDir: projectsDataRoot,
+              connection: payload,
+            });
+            return sendJson(200, result);
           }
 
           if (req.method === 'POST' && segments.length === 2 && segments[1] === 'duplicate') {
@@ -207,18 +643,65 @@ export function studioPlugin(): Plugin {
             return sendJson(201, duplicated);
           }
 
+          if (req.method === 'POST' && segments.length === 2 && segments[1] === 'export-zip') {
+            const result = await exportClientZip(segments[0]);
+            return sendJson(201, {
+              clientId: result.clientId,
+              buildPath: result.buildPath,
+              buildConfig: result.buildConfig,
+              zip: enrichClientExportWithDownloadUrl(result.zip),
+            });
+          }
+
+          if (req.method === 'GET' && segments.length === 2 && segments[1] === 'exports') {
+            const items = await listClientExports(segments[0]);
+            return sendJson(
+              200,
+              items.map((item) => enrichClientExportWithDownloadUrl(item)),
+            );
+          }
+
+          if (req.method === 'GET' && segments.length === 3 && segments[1] === 'exports' && segments[2] === 'latest') {
+            const item = await getLatestClientExport(segments[0]);
+            if (!item) {
+              return sendJson(404, {
+                error: 'Nenhum ZIP de exportação disponível para este cliente.',
+              });
+            }
+            return sendJson(200, enrichClientExportWithDownloadUrl(item));
+          }
+
+          if (
+            req.method === 'GET' &&
+            segments.length === 4 &&
+            segments[1] === 'exports' &&
+            segments[3] === 'download'
+          ) {
+            const item = await getClientExportByFileName(segments[0], segments[2]);
+            const fileBuffer = await fs.readFile(item.absolutePath);
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/zip');
+            res.setHeader('Content-Disposition', `attachment; filename="${item.fileName}"`);
+            res.end(fileBuffer);
+            return;
+          }
+
           if (req.method === 'GET' && segments.length === 2 && segments[1] === 'content') {
             const projectId = parseProjectIdOrThrow(segments[0]);
-            const record = await projectContentRepository.getByProjectId(projectId);
-            const baseContent = record ? siteContentFromRecord(record) : await readLegacyContent(contentPath);
-            const seoConfig = await projectSeoConfigRepository.getByProjectId(projectId);
-            if (!seoConfig) {
-              return sendJson(200, baseContent);
-            }
-            return sendJson(200, {
-              ...baseContent,
-              seo: siteSeoFromProjectSeoConfig(seoConfig),
-            });
+            const content = await loadProjectScopedContent(projectId);
+            return sendJson(200, content);
+          }
+
+          if (req.method === 'GET' && segments.length === 2 && segments[1] === 'versions') {
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const items = await projectVersionRepository.listByProjectId(projectId);
+            return sendJson(
+              200,
+              items.map((item) => ({
+                versionId: item.versionId,
+                createdAt: item.createdAt,
+              })),
+            );
           }
 
           if (req.method === 'PUT' && segments.length === 2 && segments[1] === 'content') {
@@ -227,19 +710,35 @@ export function studioPlugin(): Plugin {
               return sendJson(400, { error: 'JSON inválido' });
             }
             const projectId = parseProjectIdOrThrow(segments[0]);
-            const content = ContentSchema.parse(parsed);
-            const record = buildProjectContentRecord({
-              projectId,
-              content,
-            });
-            await projectContentRepository.save(record);
-            await projectSeoConfigRepository.save(
-              buildProjectSeoConfig({
-                projectId,
-                seo: content.seo,
-              }),
-            );
+            const content = await saveProjectScopedContent(projectId, parsed);
             return sendJson(200, content);
+          }
+
+          if (
+            req.method === 'POST' &&
+            segments.length === 4 &&
+            segments[1] === 'versions' &&
+            segments[3] === 'restore'
+          ) {
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const sourceVersion = await projectVersionRepository.getByProjectIdAndVersionId(
+              projectId,
+              segments[2],
+            );
+            if (!sourceVersion) {
+              return sendJson(404, { error: 'Versão não encontrada' });
+            }
+
+            const currentContent = await loadProjectScopedContent(projectId);
+            await projectVersionRepository.createSnapshot({
+              projectId,
+              content: currentContent as unknown as Record<string, JsonValue>,
+            });
+
+            const restored = await saveProjectScopedContent(projectId, sourceVersion.content, {
+              skipVersionSnapshot: true,
+            });
+            return sendJson(200, restored);
           }
 
           if (req.method === 'POST' && segments.length === 2 && segments[1] === 'upload-image') {
@@ -343,11 +842,29 @@ export function studioPlugin(): Plugin {
               ...error.payload,
             });
           }
+          if (error instanceof PublishOperationError) {
+            return sendJson(500, {
+              error: error.message,
+              publication: error.publication,
+            });
+          }
+          if (error instanceof ClientExportError) {
+            return sendJson(error.statusCode, {
+              error: error.message,
+              ...error.payload,
+            });
+          }
           if (error instanceof z.ZodError) {
             return sendJson(400, {
               error: 'Payload inválido',
               details: error.flatten(),
             });
+          }
+          if (
+            error instanceof Error &&
+            error.message === 'Configuração de publicação não encontrada para este cliente.'
+          ) {
+            return sendJson(400, { error: error.message });
           }
           console.error('Erro em /api/projects:', error);
           return sendJson(500, { error: 'Erro ao processar projetos' });

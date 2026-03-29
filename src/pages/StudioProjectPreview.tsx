@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { AlertTriangle, Loader2 } from 'lucide-react';
-import type { Content } from '@/content/schema';
+import { ContentSchema, type Content } from '@/content/schema';
 import Index from './Index';
 import { clearContentCache, setContentRuntimeOverride } from '@/lib/content';
 import type { BuilderSectionId } from '@/components/studio-builder/builderSections';
@@ -13,9 +13,25 @@ type PreviewState =
 
 type BuilderPreviewMessage =
   | { type: 'studio-builder:focus-section'; sectionId?: string }
-  | { type: 'studio-builder:refresh-content' };
+  | { type: 'studio-builder:refresh-content' }
+  | { type: 'studio-builder:set-content'; content?: unknown };
 
 const FOCUS_CLASS_NAME = 'studio-builder-preview-focus';
+
+const IS_EMBEDDED = window !== window.top;
+
+// Ordered from most specific to least — first match wins on click
+const CLICK_SECTION_MAP: Array<{ selector: string; sectionId: BuilderSectionId }> = [
+  { selector: '#sobre-nos', sectionId: 'benefits' },
+  { selector: '#forma-pagamento', sectionId: 'benefits' },
+  { selector: '#casos', sectionId: 'showcase' },
+  { selector: '#como-funciona', sectionId: 'media' },
+  { selector: '#cuidamos-tudo', sectionId: 'media' },
+  { selector: '#contato', sectionId: 'cta' },
+  { selector: 'footer', sectionId: 'footer' },
+  { selector: 'header', sectionId: 'global' },
+  { selector: 'section', sectionId: 'hero' },
+];
 
 const SECTION_SELECTORS: Record<BuilderSectionId, string[]> = {
   global: ['section', 'header'],
@@ -56,8 +72,14 @@ function resolveSectionElement(sectionId: BuilderSectionId): HTMLElement | null 
 }
 
 export default function StudioProjectPreview() {
-  const { projectId: projectIdParam } = useParams<{ projectId: string }>();
-  const projectId = useMemo(() => decodeProjectId(projectIdParam), [projectIdParam]);
+  const { projectId: projectIdParam, clientId: clientIdParam } = useParams<{
+    projectId?: string;
+    clientId?: string;
+  }>();
+  const projectId = useMemo(
+    () => decodeProjectId(clientIdParam ?? projectIdParam),
+    [clientIdParam, projectIdParam],
+  );
   const [state, setState] = useState<PreviewState>({ status: 'loading' });
   const [renderKey, setRenderKey] = useState(0);
   const [focusedSectionId, setFocusedSectionId] = useState<BuilderSectionId>('hero');
@@ -70,7 +92,7 @@ export default function StudioProjectPreview() {
       }
 
       if (!projectId) {
-        setState({ status: 'error', message: 'Projeto inválido para preview.' });
+        setState({ status: 'error', message: 'Cliente inválido para preview.' });
         return;
       }
 
@@ -80,7 +102,7 @@ export default function StudioProjectPreview() {
         if (response.status === 404) {
           setState({
             status: 'error',
-            message: `Projeto ${projectId} não encontrado para preview.`,
+            message: `Cliente ${projectId} não encontrado para preview.`,
           });
           return;
         }
@@ -97,7 +119,7 @@ export default function StudioProjectPreview() {
       } catch {
         setState({
           status: 'error',
-          message: 'Não foi possível carregar o conteúdo do projeto para preview.',
+          message: 'Não foi possível carregar o conteúdo do cliente para preview.',
         });
       }
     },
@@ -123,6 +145,19 @@ export default function StudioProjectPreview() {
         return;
       }
 
+      if (event.data.type === 'studio-builder:set-content' && event.data.content) {
+        try {
+          const nextContent = ContentSchema.parse(event.data.content);
+          clearContentCache();
+          setContentRuntimeOverride(nextContent);
+          setRenderKey((current) => current + 1);
+          setState((current) => (current.status === 'ready' ? current : { status: 'ready' }));
+        } catch {
+          // Ignora payload inválido para não interromper o preview.
+        }
+        return;
+      }
+
       if (event.data.type === 'studio-builder:focus-section' && event.data.sectionId) {
         if (isBuilderSectionId(event.data.sectionId)) {
           setFocusedSectionId(event.data.sectionId);
@@ -135,6 +170,30 @@ export default function StudioProjectPreview() {
       window.removeEventListener('message', handleMessage);
     };
   }, [loadPreview]);
+
+  useEffect(() => {
+    if (!IS_EMBEDDED || state.status !== 'ready') {
+      return;
+    }
+
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (!target) return;
+
+      for (const { selector, sectionId } of CLICK_SECTION_MAP) {
+        if (target.closest(selector)) {
+          window.parent.postMessage(
+            { type: 'studio-builder:select-section', sectionId },
+            window.location.origin,
+          );
+          break;
+        }
+      }
+    };
+
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, [state.status, renderKey]);
 
   useEffect(() => {
     if (state.status !== 'ready') {
@@ -165,7 +224,7 @@ export default function StudioProjectPreview() {
       <div className="min-h-screen bg-[#020617] text-[#F8FAFC] flex items-center justify-center">
         <div className="inline-flex items-center gap-2 text-sm text-[#94A3B8]">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Carregando preview do projeto...
+          Carregando preview do cliente...
         </div>
       </div>
     );
@@ -195,6 +254,16 @@ export default function StudioProjectPreview() {
           border-radius: 16px;
           transition: box-shadow 180ms ease, outline-color 180ms ease;
         }
+        ${IS_EMBEDDED ? `
+        header:hover, footer:hover, section:hover,
+        #sobre-nos:hover, #forma-pagamento:hover, #casos:hover,
+        #como-funciona:hover, #cuidamos-tudo:hover, #contato:hover {
+          cursor: pointer;
+          outline: 2px dashed rgba(14, 165, 233, 0.45);
+          outline-offset: 4px;
+          border-radius: 12px;
+        }
+        ` : ''}
       `}</style>
       <Index key={renderKey} />
     </>

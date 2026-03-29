@@ -4,6 +4,7 @@ import { RevealOnScroll } from './RevealOnScroll';
 import { useEffect, useState } from 'react';
 import { fetchContent } from '@/lib/content';
 import type { Content } from '@/content/schema';
+import { normalizeCoverImageLayout } from '@/lib/imageLayout';
 
 export const HowItWorks = () => {
   const [content, setContent] = useState<Content | null>(null);
@@ -13,6 +14,7 @@ export const HowItWorks = () => {
   }, []);
 
   const diagramImage = content?.howItWorks?.image || solarDiagram;
+  const diagramImageLayout = normalizeCoverImageLayout(content?.imageLayout?.howItWorks);
   const steps = [
     {
       icon: Sun,
@@ -67,15 +69,22 @@ export const HowItWorks = () => {
         {/* Diagram Image */}
         <RevealOnScroll animation="scale-in" delay={100}>
           <div className="max-w-5xl mx-auto mb-12 md:mb-16 px-2">
-            <img 
-              src={diagramImage.startsWith('/') || diagramImage.startsWith('http') ? diagramImage : solarDiagram} 
-              alt="Diagrama do sistema de energia solar fotovoltaica"
-              className="w-full h-auto rounded-xl md:rounded-2xl shadow-lg"
-              width="1200"
-              height="800"
-              loading="lazy"
-              decoding="async"
-            />
+            <div className="overflow-hidden rounded-xl md:rounded-2xl shadow-lg">
+              <img 
+                src={diagramImage.startsWith('/') || diagramImage.startsWith('http') ? diagramImage : solarDiagram} 
+                alt="Diagrama do sistema de energia solar fotovoltaica"
+                className="aspect-[16/10] w-full h-full object-cover"
+                style={{
+                  objectPosition: `${diagramImageLayout.x}% ${diagramImageLayout.y}%`,
+                  transform: `scale(${diagramImageLayout.scale})`,
+                  transformOrigin: `${diagramImageLayout.x}% ${diagramImageLayout.y}%`,
+                }}
+                width="1200"
+                height="800"
+                loading="lazy"
+                decoding="async"
+              />
+            </div>
           </div>
         </RevealOnScroll>
 

@@ -2,13 +2,17 @@ import { useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { trackCTAPopupOpen } from '@/lib/gtm';
+import type { Content } from '@/content/schema';
+import { normalizeLogoImageLayout } from '@/lib/imageLayout';
 
 interface HeaderProps {
   onOpenPopup: () => void;
+  content?: Content;
 }
 
-export const Header = ({ onOpenPopup }: HeaderProps) => {
+export const Header = ({ onOpenPopup, content }: HeaderProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const logoLayout = normalizeLogoImageLayout(content?.imageLayout?.logo);
 
   const handleCTA = () => {
     trackCTAPopupOpen('header');
@@ -28,8 +32,11 @@ export const Header = ({ onOpenPopup }: HeaderProps) => {
         <a href="/" className="flex items-center transition-transform duration-300 hover:scale-105">
           <img 
             src="https://www.efitecsolar.com/assets/images/logo.png" 
-            alt="EFITEC SOLAR" 
-            className="h-10 md:h-12 w-auto"
+            alt={content?.global.brand || 'EFITEC SOLAR'}
+            className="h-10 md:h-12 w-auto origin-left"
+            style={{
+              transform: `translate(${logoLayout.x}px, ${logoLayout.y}px) scale(${logoLayout.scale})`,
+            }}
             width="150"
             height="50"
             loading="eager"

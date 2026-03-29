@@ -1,91 +1,121 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Award,
   Boxes,
+  Building,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Cog,
+  FileCheck,
   FileClock,
   Image,
   Rocket,
   Search,
   Settings2,
+  Wrench,
+  Zap,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { BuilderSection, BuilderSectionId } from './builderSections';
 
+export type BuilderSidebarModuleId =
+  | 'builder'
+  | 'history'
+  | 'publish';
+
 interface BuilderSidebarProps {
   sections: BuilderSection[];
   activeSectionId: BuilderSectionId;
+  activeModuleId: BuilderSidebarModuleId;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   onSectionChange: (sectionId: BuilderSectionId) => void;
+  onModuleChange: (moduleId: BuilderSidebarModuleId) => void;
 }
 
-const modules = [
+interface BuilderModule {
+  id: BuilderSidebarModuleId | 'clients';
+  label: string;
+  icon: LucideIcon;
+  href?: string;
+}
+
+const modules: BuilderModule[] = [
   { id: 'builder', label: 'Construtor', icon: Boxes },
-  { id: 'projects', label: 'Projetos', icon: Settings2, href: '/dev/studio/projects' },
-  { id: 'media', label: 'Mídia', icon: Image },
-  { id: 'seo', label: 'SEO', icon: Search },
-  { id: 'publish', label: 'Publicação', icon: Rocket },
   { id: 'history', label: 'Histórico', icon: FileClock },
-  { id: 'settings', label: 'Configurações', icon: Cog },
+  { id: 'publish', label: 'Publicação', icon: Rocket },
+  { id: 'clients', label: 'Clientes', icon: Settings2, href: '/construtor' },
 ] as const;
+
+const sectionIcons: Record<BuilderSectionId, LucideIcon> = {
+  global: FileCheck,
+  seo: Search,
+  hero: Zap,
+  benefits: Award,
+  showcase: Building,
+  media: Image,
+  cta: CheckCircle2,
+  footer: Wrench,
+};
 
 export function BuilderSidebar({
   sections,
   activeSectionId,
+  activeModuleId,
   collapsed,
   onToggleCollapsed,
   onSectionChange,
+  onModuleChange,
 }: BuilderSidebarProps) {
-  const groupedSections = [
-    {
-      group: 'Obrigatórios',
-      items: sections.filter((section) => section.group === 'Obrigatórios'),
-    },
-    {
-      group: 'Conteúdo',
-      items: sections.filter((section) => section.group === 'Conteúdo'),
-    },
-    {
-      group: 'Complementos',
-      items: sections.filter((section) => section.group === 'Complementos'),
-    },
-  ];
+  const [hoverExpanded, setHoverExpanded] = useState(false);
+  const expanded = !collapsed || hoverExpanded;
 
   return (
     <aside
+      onMouseEnter={() => {
+        if (collapsed) {
+          setHoverExpanded(true);
+        }
+      }}
+      onMouseLeave={() => {
+        if (collapsed) {
+          setHoverExpanded(false);
+        }
+      }}
       className={cn(
-        'builder-surface builder-scroll overflow-hidden transition-all duration-200',
-        collapsed ? 'w-full lg:w-[76px]' : 'w-full lg:w-[260px]',
+        'builder-surface flex min-h-0 flex-col overflow-hidden transition-all duration-200 lg:h-full',
+        expanded ? 'w-full lg:w-[226px]' : 'w-full lg:w-[66px]',
       )}
     >
-      <div className="flex items-center justify-between border-b border-[var(--builder-border)] bg-gradient-to-r from-[#020617] to-[#0f172a] px-3 py-3">
-        <div className={cn('space-y-0.5', collapsed && 'lg:hidden')}>
+      <div className="flex items-center justify-between border-b border-[var(--builder-border)] bg-gradient-to-r from-[#020617] to-[#0a1630] px-2.5 py-2.5">
+        <div className={cn('space-y-0.5', !expanded && 'lg:hidden')}>
           <p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-[var(--builder-accent-warm)]">
             Construtor
           </p>
-          <p className="builder-heading text-base font-semibold text-[var(--builder-text-primary)]">
+          <p className="builder-heading text-[15px] font-semibold text-[var(--builder-text-primary)]">
             Navegação
           </p>
         </div>
         <button
           type="button"
-          className="hidden h-8 w-8 items-center justify-center rounded-full border border-[var(--builder-border)] bg-[rgba(15,23,42,0.75)] text-[var(--builder-text-muted)] transition hover:text-[var(--builder-text-primary)] lg:inline-flex"
+          className="hidden h-8 w-8 items-center justify-center rounded-full border border-[var(--builder-border)] bg-[rgba(7,15,31,0.72)] text-[var(--builder-text-muted)] transition hover:text-[var(--builder-text-primary)] lg:inline-flex"
           onClick={onToggleCollapsed}
           aria-label={collapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
         >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
       </div>
 
-      <div className="space-y-5 p-3">
-        <nav className="space-y-1">
+      <div className={cn('builder-scroll min-h-0 overflow-y-auto p-2', expanded ? 'flex-1' : 'flex-none')}>
+        <nav className="space-y-1.5">
           {modules.map((module) => {
             const Icon = module.icon;
+            const isActiveModule = module.id === activeModuleId;
             const baseClassName = cn(
-              'group flex w-full items-center rounded-xl border px-2.5 py-2 text-sm transition',
-              module.id === 'builder'
+              'group flex w-full items-center rounded-[10px] border px-2 py-1.5 text-[12px] transition',
+              isActiveModule
                 ? 'border-[rgba(14,165,233,0.35)] bg-[rgba(14,165,233,0.16)] text-[var(--builder-brand-primary)] shadow-[0_0_20px_rgba(14,165,233,0.15)]'
                 : 'border-transparent text-[var(--builder-text-secondary)] hover:border-[var(--builder-border)] hover:bg-[var(--builder-bg-surface-highlight)] hover:text-[var(--builder-text-primary)]',
             );
@@ -94,70 +124,76 @@ export function BuilderSidebar({
               return (
                 <Link key={module.id} to={module.href} className={baseClassName}>
                   <Icon className="h-4 w-4 shrink-0" />
-                  <span className={cn('ml-2.5 truncate', collapsed && 'lg:hidden')}>{module.label}</span>
+                  <span className={cn('ml-2.5 truncate', !expanded && 'lg:hidden')}>{module.label}</span>
                 </Link>
               );
             }
 
             return (
-              <button key={module.id} type="button" className={baseClassName}>
+              <button
+                key={module.id}
+                type="button"
+                className={baseClassName}
+                onClick={() => {
+                  if (module.id !== 'clients') {
+                    onModuleChange(module.id);
+                  }
+                }}
+              >
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className={cn('ml-2.5 truncate', collapsed && 'lg:hidden')}>{module.label}</span>
+                <span className={cn('ml-2.5 truncate', !expanded && 'lg:hidden')}>{module.label}</span>
               </button>
             );
           })}
         </nav>
 
-        <div className={cn('space-y-4', collapsed && 'lg:hidden')}>
-          {groupedSections.map((entry) => (
-            <div key={entry.group} className="space-y-1.5">
-              <p className="px-1 text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--builder-text-muted)]">
-                {entry.group}
-              </p>
-              <div className="space-y-1">
-                {entry.items.map((section) => {
-                  const active = section.id === activeSectionId;
-                  return (
-                    <button
-                      key={section.id}
-                      type="button"
-                      onClick={() => onSectionChange(section.id)}
-                      className={cn(
-                        'w-full rounded-xl border px-3 py-2 text-left transition',
-                        active
-                          ? 'border-[rgba(14,165,233,0.35)] bg-[rgba(14,165,233,0.15)] text-[var(--builder-brand-primary)] shadow-[0_0_20px_rgba(14,165,233,0.15)]'
-                          : 'border-transparent bg-[rgba(15,23,42,0.25)] text-[var(--builder-text-muted)] hover:border-[var(--builder-border)] hover:bg-[var(--builder-bg-surface-highlight)] hover:text-[var(--builder-text-primary)]',
-                      )}
-                    >
-                      <p className="text-sm font-semibold">{section.title}</p>
-                      <p className="mt-1 text-xs text-[var(--builder-text-secondary)]">{section.description}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+        <div className={cn('my-3 border-t-2 border-[rgba(99,120,160,0.5)]', !expanded && 'lg:hidden')} />
+
+        <div className={cn('space-y-1', !expanded && 'lg:hidden')}>
+          {sections.map((section) => {
+            const Icon = sectionIcons[section.id];
+            const active = section.id === activeSectionId;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => onSectionChange(section.id)}
+                className={cn(
+                  'group flex w-full items-center rounded-[10px] border px-2 py-1.5 text-[12px] transition',
+                  active
+                    ? 'border-[rgba(14,165,233,0.35)] bg-[rgba(14,165,233,0.15)] text-[var(--builder-brand-primary)] shadow-[0_0_20px_rgba(14,165,233,0.15)]'
+                    : 'border-transparent text-[var(--builder-text-secondary)] hover:border-[var(--builder-border)] hover:bg-[var(--builder-bg-surface-highlight)] hover:text-[var(--builder-text-primary)]',
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="ml-2.5 truncate font-semibold">{section.title}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {collapsed ? (
-        <div className="hidden h-full items-center justify-center px-2 pb-3 text-xs text-[var(--builder-text-secondary)] lg:flex lg:flex-col lg:gap-2">
-          {sections.map((section) => (
-            <button
-              key={section.id}
-              type="button"
-              title={section.title}
-              onClick={() => onSectionChange(section.id)}
-              className={cn(
-                'h-9 w-9 rounded-xl border text-[11px] font-semibold uppercase transition',
-                section.id === activeSectionId
-                  ? 'border-[rgba(14,165,233,0.35)] bg-[rgba(14,165,233,0.15)] text-[var(--builder-brand-primary)]'
-                  : 'border-transparent bg-[rgba(15,23,42,0.5)] hover:border-[var(--builder-border)] hover:text-[var(--builder-text-primary)]',
-              )}
-            >
-              {section.title.slice(0, 1)}
-            </button>
-          ))}
+      {!expanded ? (
+        <div className="hidden border-t-2 border-[rgba(99,120,160,0.5)] mt-3 mb-2 px-2 pt-3 pb-2 text-xs text-[var(--builder-text-secondary)] lg:flex lg:flex-col lg:gap-0">
+          {sections.map((section) => {
+            const Icon = sectionIcons[section.id];
+            return (
+              <button
+                key={section.id}
+                type="button"
+                title={section.title}
+                onClick={() => onSectionChange(section.id)}
+                className={cn(
+                  'flex h-8 w-8 items-center justify-center rounded-[10px] border transition',
+                  section.id === activeSectionId
+                    ? 'border-[rgba(14,165,233,0.35)] bg-[rgba(14,165,233,0.15)] text-[var(--builder-brand-primary)]'
+                    : 'border-transparent bg-[rgba(15,23,42,0.5)] hover:border-[var(--builder-border)] hover:text-[var(--builder-text-primary)]',
+                )}
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </aside>
