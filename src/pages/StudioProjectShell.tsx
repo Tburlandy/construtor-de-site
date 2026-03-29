@@ -26,6 +26,10 @@ function formatDateLabel(raw: string): string {
   return date.toLocaleString('pt-BR');
 }
 
+function formatPublicationDestination(publication: PublicationRecord): string {
+  return publication.deployTargetId ? publication.deployTargetId : 'não informado';
+}
+
 export default function StudioProjectShell() {
   const { projectId: projectIdParam } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -407,6 +411,10 @@ export default function StudioProjectShell() {
                         {publication.finishedAt
                           ? ` · finalizado em ${formatDateLabel(publication.finishedAt)}`
                           : ''}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        projeto: <span className="font-mono">{publication.projectId}</span> · destino:{' '}
+                        <span className="font-mono">{formatPublicationDestination(publication)}</span>
                       </p>
                       <p className="text-xs text-muted-foreground">
                         artefato: <span className="font-mono">{publication.artifactPath}</span>

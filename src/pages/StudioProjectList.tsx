@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { FolderOpen, Loader2, Plus } from 'lucide-react';
+import { Copy, FolderOpen, Loader2, Plus } from 'lucide-react';
 
 export default function StudioProjectList() {
   const { toast } = useToast();
@@ -24,8 +24,17 @@ export default function StudioProjectList() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
+  const [sourceProject, setSourceProject] = useState<ProjectMetadata | null>(null);
   const [form, setForm] = useState({
     projectId: '',
+    name: '',
+    slug: '',
+    description: '',
+  });
+  const [duplicateForm, setDuplicateForm] = useState({
+    targetProjectId: '',
     name: '',
     slug: '',
     description: '',
@@ -109,6 +118,77 @@ export default function StudioProjectList() {
     }
   };
 
+  const openDuplicateDialog = (project: ProjectMetadata) => {
+    setSourceProject(project);
+    setDuplicateForm({
+      targetProjectId: `${project.projectId}-copia`,
+      name: `${project.name} (cópia)`,
+      slug: `${project.slug}-copia`,
+      description: project.description ?? '',
+    });
+    setDuplicateOpen(true);
+  };
+
+  const handleDuplicate = async () => {
+    if (!sourceProject) {
+      return;
+    }
+
+    const body = {
+      targetProjectId: duplicateForm.targetProjectId.trim(),
+      ...(duplicateForm.name.trim() ? { name: duplicateForm.name.trim() } : {}),
+      ...(duplicateForm.slug.trim() ? { slug: duplicateForm.slug.trim() } : {}),
+      ...(duplicateForm.description.trim()
+        ? { description: duplicateForm.description.trim() }
+        : {}),
+    };
+
+    if (!body.targetProjectId) {
+      toast({
+        title: 'ID obrigatório',
+        description: 'Informe o ID do projeto de destino para duplicação.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setDuplicating(true);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(sourceProject.projectId)}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg =
+          typeof payload.error === 'string' ? payload.error : 'Não foi possível duplicar o projeto.';
+        toast({
+          title: 'Erro ao duplicar',
+          description: msg,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setDuplicateOpen(false);
+      toast({
+        title: 'Projeto duplicado',
+        description: `Novo projeto: ${body.targetProjectId}`,
+      });
+      await loadProjects();
+      navigate(`/dev/studio/projects/${encodeURIComponent(body.targetProjectId)}`);
+    } catch {
+      toast({
+        title: 'Erro',
+        description: 'Falha de rede ao duplicar o projeto.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDuplicating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -187,6 +267,93 @@ export default function StudioProjectList() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
+            <Dialog
+              open={duplicateOpen}
+              onOpenChange={(open) => {
+                setDuplicateOpen(open);
+                if (!open) {
+                  setSourceProject(null);
+                }
+              }}
+            >
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Duplicar projeto</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-2">
+                  <p className="text-xs text-muted-foreground">
+                    Origem:{' '}
+                    <span className="font-mono">
+                      {sourceProject ? sourceProject.projectId : 'não selecionado'}
+                    </span>
+                  </p>
+                  <div className="grid gap-2">
+                    <Label htmlFor="duplicate-target-id">ID de destino</Label>
+                    <Input
+                      id="duplicate-target-id"
+                      value={duplicateForm.targetProjectId}
+                      onChange={(e) =>
+                        setDuplicateForm((current) => ({
+                          ...current,
+                          targetProjectId: e.target.value,
+                        }))
+                      }
+                      placeholder="ex: cliente-rio-copia"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="duplicate-name">Nome (opcional)</Label>
+                    <Input
+                      id="duplicate-name"
+                      value={duplicateForm.name}
+                      onChange={(e) =>
+                        setDuplicateForm((current) => ({ ...current, name: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="duplicate-slug">Slug (opcional)</Label>
+                    <Input
+                      id="duplicate-slug"
+                      value={duplicateForm.slug}
+                      onChange={(e) =>
+                        setDuplicateForm((current) => ({ ...current, slug: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="duplicate-description">Descrição (opcional)</Label>
+                    <Textarea
+                      id="duplicate-description"
+                      rows={3}
+                      value={duplicateForm.description}
+                      onChange={(e) =>
+                        setDuplicateForm((current) => ({
+                          ...current,
+                          description: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setDuplicateOpen(false)} disabled={duplicating}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={() => void handleDuplicate()} disabled={duplicating || !sourceProject}>
+                    {duplicating ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Duplicando…
+                      </>
+                    ) : (
+                      'Duplicar'
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -222,12 +389,18 @@ export default function StudioProjectList() {
                         {p.status}
                       </p>
                     </div>
-                    <Button variant="secondary" asChild>
-                      <Link to={`/dev/studio/projects/${encodeURIComponent(p.projectId)}`}>
-                        <FolderOpen className="w-4 h-4 mr-2" />
-                        Abrir
-                      </Link>
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={() => openDuplicateDialog(p)}>
+                        <Copy className="w-4 h-4 mr-2" />
+                        Duplicar
+                      </Button>
+                      <Button variant="secondary" asChild>
+                        <Link to={`/dev/studio/projects/${encodeURIComponent(p.projectId)}`}>
+                          <FolderOpen className="w-4 h-4 mr-2" />
+                          Abrir
+                        </Link>
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
