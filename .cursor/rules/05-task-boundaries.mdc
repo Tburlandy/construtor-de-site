@@ -1,0 +1,36 @@
+---
+description: Regras para manter tasks pequenas, sem mistura de fases e sem expansão de escopo.
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Objetivo
+
+Controlar tamanho de task e impedir execução difusa.
+
+# Quando se aplica
+
+Sempre.
+
+# Instruções
+
+- Execute um card por vez.
+- Limite a mudança ao objetivo central do card.
+- Se surgir necessidade de outro trabalho:
+  - registre no resumo final;
+  - não implemente sem novo card.
+- Se a task começar a exigir mudanças em múltiplas camadas amplas ao mesmo tempo, pare e sinalize que o card precisa ser redividido.
+- Use os arquivos permitidos do card como fronteira primária.
+
+# Proibições
+
+- Não “aproveitar” para corrigir coisas paralelas.
+- Não agrupar vários cards mentalmente.
+- Não misturar descoberta grande com implementação grande.
+- Não tocar arquivos proibidos pelo card.
+
+# Expectativas de validação
+
+- Alterações contidas no escopo.
+- Relato claro do que foi deixado de fora.

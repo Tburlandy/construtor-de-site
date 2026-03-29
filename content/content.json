@@ -1,0 +1,134 @@
+{
+  "global": {
+    "brand": "EFITEC SOLAR",
+    "city": "São Gonçalo e Niterói",
+    "whatsappE164": "5521990875936",
+    "cnpj": "32.174.397/0001-24",
+    "address": "R. Oliveira Botelho, 428  \nNeves, São Gonçalo - RJ\nCEP: 24425-006",
+    "siteUrl": "https://www.efitecsolar.com",
+    "gtmId": "GTM-MR6FMD7L",
+    "webhookUrl": "https://script.google.com/macros/s/AKfycbx_3dsTReImmnSLZUahcV7Vft7QcwoAT2xLSYj6WvOVRcg8B2k_4RIKqzVxnSTaK-8nJQ/exec",
+    "secondaryWebhookUrl": "https://b1f5adb22685.ngrok-free.app/webhook/elementor",
+    "formId": "54b01719",
+    "formName": "Acompanhamento",
+    "canalId": "ZhVZTpUHoR_CHD_-"
+  },
+  "seo": {
+    "title": "Energia Solar Fotovoltaica | Painéis Solares | Instalação e Projeto",
+    "description": "Instalação de painéis solares fotovoltaicos com engenharia própria e marcas Tier-1. Projeto, instalação e homologação ANEEL. Economize até 95% na conta de luz. Solicite orçamento gratuito.",
+    "canonical": "{{siteUrl}}/",
+    "ogImage": "/hero-solar-panels.jpg",
+    "jsonLd": {
+      "@context": "https://schema.org",
+      "@type": "LocalBusiness",
+      "name": "{{brand}}",
+      "url": "{{siteUrl}}/",
+      "telephone": "+{{whatsappE164}}",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "{{city}}",
+        "addressCountry": "BR"
+      },
+      "priceRange": "$$",
+      "areaServed": "{{city}}",
+      "category": "Solar energy company"
+    }
+  },
+  "hero": {
+    "headline": "⚡ Líder em painéis solares em {{city}}",
+    "subheadline": "☀️ Instalação rápida, equipe especializada e condições acessíveis para transformar sua economia.",
+    "ctaLabel": "Orçamento gratuito",
+    "background": "/hero-solar-panels.jpg"
+  },
+  "benefits": [
+    {
+      "icon": "FileCheck",
+      "title": "Projeto Completo",
+      "text": "Dimensionamento técnico e análise de viabilidade"
+    },
+    {
+      "icon": "Wrench",
+      "title": "Instalação Profissional",
+      "text": "Equipe certificada com NR10 e NR35"
+    },
+    {
+      "icon": "CheckCircle2",
+      "title": "Homologação ANEEL",
+      "text": "Cuidamos de toda a documentação e aprovação"
+    },
+    {
+      "icon": "Headphones",
+      "title": "Suporte Completo",
+      "text": "Atendimento local e monitoramento contínuo"
+    }
+  ],
+  "showcase": {
+    "projects": [
+      {
+        "image": "/case-sao-goncalo.png",
+        "tipo": "Residencial",
+        "localizacao": "São Gonçalo",
+        "modulos": 8,
+        "potenciaModulo": 570,
+        "economia": 6000
+      },
+      {
+        "image": "/case-veterinario.png",
+        "tipo": "Comercial",
+        "localizacao": "Niterói",
+        "modulos": 74,
+        "potenciaModulo": 550,
+        "economia": 55000
+      },
+      {
+        "image": "/case-rio-ouro.png",
+        "tipo": "Residencial",
+        "localizacao": "Niterói",
+        "modulos": 17,
+        "potenciaModulo": 550,
+        "economia": 11793
+      },
+      {
+        "image": "/case-barra-tijuca.png",
+        "tipo": "Residencial",
+        "localizacao": "Barra da Tijuca",
+        "modulos": 16,
+        "potenciaModulo": 550,
+        "economia": 14500
+      },
+      {
+        "image": "/case-duque-caxias.png",
+        "tipo": "Comercial",
+        "localizacao": "Duque de Caxias - RJ",
+        "modulos": 25,
+        "potenciaModulo": 550,
+        "economia": 18000
+      },
+      {
+        "image": "/case-maria-paula.png",
+        "tipo": "Residencial",
+        "localizacao": "Niterói",
+        "modulos": 8,
+        "potenciaModulo": 570,
+        "economia": 6000
+      },
+      {
+        "image": "/case-sao-goncalo-2.png",
+        "tipo": "Comercial",
+        "localizacao": "São Gonçalo",
+        "modulos": 57,
+        "potenciaModulo": 550,
+        "economia": 67108
+      }
+    ]
+  },
+  "howItWorks": {
+    "image": "/solar-system-diagram.jpg"
+  },
+  "proofBar": {
+    "image": "/google-reviews.png"
+  },
+  "fullService": {
+    "image": "/solar-panels-angle.png"
+  }
+}

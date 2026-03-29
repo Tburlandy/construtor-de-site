@@ -1,0 +1,65 @@
+import { defineConfig, loadEnv } from "vite";
+import react from "@vitejs/plugin-react-swc";
+import path from "path";
+import { componentTagger } from "lovable-tagger";
+import { studioPlugin } from "./vite-plugin-studio";
+
+const DEFAULT_BASE_PATH = "/pagina/";
+const DEFAULT_PROJECT_ID = "default";
+
+function normalizeBasePath(rawPath: string | undefined): string {
+  const trimmed = rawPath?.trim();
+  if (!trimmed) {
+    return DEFAULT_BASE_PATH;
+  }
+
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
+}
+
+// https://vitejs.dev/config/
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  const projectId = (env.VITE_PROJECT_ID || env.PROJECT_ID || DEFAULT_PROJECT_ID).trim();
+  const projectBasePath = normalizeBasePath(
+    env.VITE_PROJECT_BASE_PATH || env.PROJECT_BASE_PATH || env.BASE_PATH,
+  );
+  const projectDomain = (env.VITE_PROJECT_DOMAIN || env.PROJECT_DOMAIN || "").trim();
+
+  return {
+    base: projectBasePath,
+    server: {
+      host: "::",
+      port: 8084,
+      cors: true,
+      allowedHosts: [
+        "cd94fbbe0aed.ngrok-free.app",
+        ".ngrok-free.app",
+        ".ngrok.io",
+      ],
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      },
+    },
+    plugins: [
+      react(),
+      mode === "development" && componentTagger(),
+      mode === "development" && studioPlugin(),
+    ].filter(Boolean),
+    define: {
+      __PROJECT_BUILD_CONFIG__: JSON.stringify({
+        projectId,
+        basePath: projectBasePath,
+        domain: projectDomain || null,
+      }),
+    },
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
+    publicDir: "public",
+  };
+});
