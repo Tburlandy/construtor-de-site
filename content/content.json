@@ -61,6 +61,18 @@
     ],
     "background": "/hero-solar-panels.jpg"
   },
+  "header": {
+    "menu": [
+      { "sectionId": "forma-pagamento", "label": "Forma de pagamento" },
+      { "sectionId": "cuidamos-tudo", "label": "Serviço completo" },
+      { "sectionId": "sobre-nos", "label": "Sobre nós" },
+      { "sectionId": "casos", "label": "Projetos" },
+      { "sectionId": "como-funciona", "label": "Como funciona" }
+    ],
+    "desktopCtaLabel": "Fale no Whatsapp",
+    "mobileCtaLabel": "Fale no Whatsapp",
+    "mobileCompactCtaLabel": "WhatsApp"
+  },
   "financing": {
     "badge": "Pagamento Facilitado",
     "titlePrefix": "Comece a pagar em",
@@ -105,6 +117,14 @@
     }
   ],
   "showcase": {
+    "titleHighlight": "+ 1000",
+    "titleSuffix": "projetos realizados",
+    "subtitle": "Projetos reais implementados com resultados comprovados",
+    "labels": {
+      "location": "Localização",
+      "system": "Sistema",
+      "annualSavings": "Economia anual"
+    },
     "projects": [
       {
         "image": "/case-sao-goncalo.png",
@@ -166,6 +186,7 @@
   },
   "howItWorks": {
     "image": "/solar-system-diagram.jpg",
+    "imageAlt": "Diagrama do sistema de energia solar fotovoltaica",
     "titlePrefix": "Como",
     "titleHighlight": "funciona",
     "subtitle": "Entenda o processo de geração da energia solar fotovoltaica",

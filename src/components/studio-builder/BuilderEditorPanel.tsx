@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, LayoutTemplate, Palette, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { Benefit, Content, ImageLayout, Project } from '@/content/schema';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -29,8 +29,6 @@ interface BuilderEditorPanelProps {
   onUploadImage: (file: File) => Promise<string>;
   onCreateLayout?: () => void;
 }
-
-const ACCORDION_SCROLL_CORRECTION_DELAY_MS = 240;
 
 function clampToPositiveInteger(value: string): number {
   const parsed = Number.parseInt(value, 10);
@@ -86,6 +84,14 @@ const DEFAULT_HERO_STATS = [
   { value: '25 anos', label: 'de garantia nas placas' },
   { value: '100%', label: 'de satisfação no Google' },
   { value: '6 anos', label: 'No mercado' },
+];
+
+const DEFAULT_HEADER_MENU_ITEMS = [
+  { sectionId: 'forma-pagamento', label: 'Forma de pagamento' },
+  { sectionId: 'cuidamos-tudo', label: 'Serviço completo' },
+  { sectionId: 'sobre-nos', label: 'Sobre nós' },
+  { sectionId: 'casos', label: 'Projetos' },
+  { sectionId: 'como-funciona', label: 'Como funciona' },
 ];
 
 const DEFAULT_FINANCING_ITEMS = [
@@ -182,6 +188,8 @@ export function BuilderEditorPanel({
   const [localGroups, setLocalGroups] = useState<LayoutStyleGroup[]>(LAYOUT_STYLE_GROUPS);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingGroupTitle, setEditingGroupTitle] = useState('');
+  const sectionItemRefs = useRef<Partial<Record<BuilderSectionId, HTMLElement | null>>>({});
+  const sectionContentRefs = useRef<Partial<Record<BuilderSectionId, HTMLElement | null>>>({});
 
   useEffect(() => {
     setJsonLdDraft(JSON.stringify(content.seo.jsonLd ?? {}, null, 2));
@@ -189,36 +197,61 @@ export function BuilderEditorPanel({
 
   useEffect(() => {
     setOpenSectionId(activeSectionId);
+  }, [activeSectionId]);
+
+  useLayoutEffect(() => {
+    if (activeTab !== 'data' || !openSectionId) {
+      return;
+    }
 
     const node = editorScrollRef.current;
-    if (!node) return;
+    if (!node) {
+      return;
+    }
 
-    const scrollToSectionHeader = (behavior: ScrollBehavior) => {
-      const target =
-        node.querySelector<HTMLElement>(`[data-builder-section-trigger-id="${activeSectionId}"]`) ??
-        node.querySelector<HTMLElement>(`[data-builder-section-id="${activeSectionId}"]`);
-      if (!target) {
-        node.scrollTo({ top: 0, behavior });
-        return;
-      }
-      const targetTop = Math.max(0, target.offsetTop - 8);
-      node.scrollTo({ top: targetTop, behavior });
+    const activeElement = document.activeElement;
+    if (
+      activeElement instanceof HTMLElement &&
+      node.contains(activeElement) &&
+      (activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        activeElement.isContentEditable)
+    ) {
+      activeElement.blur();
+    }
+
+    const sectionRoot = sectionItemRefs.current[openSectionId];
+    const target =
+      sectionRoot?.querySelector<HTMLElement>(`[data-builder-section-trigger-id="${openSectionId}"]`) ??
+      sectionRoot;
+
+    if (!target) {
+      node.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+    const correctionFrame = window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' });
+    });
+
+    const contentNode = sectionContentRefs.current[openSectionId];
+    const handleAnimationEnd = () => {
+      target.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' });
     };
 
-    const timer = window.setTimeout(() => {
-      scrollToSectionHeader('smooth');
-    }, 0);
-
-    // Corrige o offset após a animação do accordion quando há conteúdo grande.
-    const correctionTimer = window.setTimeout(() => {
-      scrollToSectionHeader('auto');
-    }, ACCORDION_SCROLL_CORRECTION_DELAY_MS);
+    if (contentNode) {
+      contentNode.addEventListener('animationend', handleAnimationEnd, { once: true });
+    }
 
     return () => {
-      window.clearTimeout(timer);
-      window.clearTimeout(correctionTimer);
+      window.cancelAnimationFrame(correctionFrame);
+      if (contentNode) {
+        contentNode.removeEventListener('animationend', handleAnimationEnd);
+      }
     };
-  }, [activeSectionId, scrollToTopSignal]);
+  }, [activeTab, openSectionId, scrollToTopSignal]);
 
   const setGlobalField = <K extends keyof Content['global']>(field: K, value: Content['global'][K]) => {
     onContentChange((current) => ({
@@ -265,6 +298,22 @@ export function BuilderEditorPanel({
           'Em até 120 vezes, com 1º pagamento em 120 dias',
         items: current.financing?.items?.length ? current.financing.items : DEFAULT_FINANCING_ITEMS,
         ctaLabel: current.financing?.ctaLabel ?? 'Orçamento gratuito',
+        [field]: value,
+      },
+    }));
+  };
+
+  const setHeaderField = <K extends keyof NonNullable<Content['header']>>(
+    field: K,
+    value: NonNullable<Content['header']>[K],
+  ) => {
+    onContentChange((current) => ({
+      ...current,
+      header: {
+        menu: current.header?.menu?.length ? current.header.menu : DEFAULT_HEADER_MENU_ITEMS,
+        desktopCtaLabel: current.header?.desktopCtaLabel ?? 'Fale no Whatsapp',
+        mobileCtaLabel: current.header?.mobileCtaLabel ?? 'Fale no Whatsapp',
+        mobileCompactCtaLabel: current.header?.mobileCompactCtaLabel ?? 'WhatsApp',
         [field]: value,
       },
     }));
@@ -432,6 +481,18 @@ export function BuilderEditorPanel({
             />
           </div>
           <div className="space-y-2">
+            <p className={builderLabelClassName}>Google Tag Manager ID</p>
+            <input
+              className={builderInputClassName}
+              value={content.global.gtmId ?? ''}
+              onChange={(event) => setGlobalField('gtmId', event.target.value)}
+              placeholder="GTM-XXXXXXX"
+            />
+            <p className={builderHintClassName}>
+              Usado para injetar GTM por cliente no runtime e fixado no ZIP de exportação.
+            </p>
+          </div>
+          <div className="space-y-2">
             <p className={builderLabelClassName}>CNPJ</p>
             <input
               className={builderInputClassName}
@@ -448,6 +509,50 @@ export function BuilderEditorPanel({
               onChange={(event) => setGlobalField('address', event.target.value)}
             />
           </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Webhook principal</p>
+            <input
+              className={builderInputClassName}
+              value={content.global.webhookUrl ?? ''}
+              onChange={(event) => setGlobalField('webhookUrl', event.target.value)}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Webhook secundário</p>
+            <input
+              className={builderInputClassName}
+              value={content.global.secondaryWebhookUrl ?? ''}
+              onChange={(event) => setGlobalField('secondaryWebhookUrl', event.target.value)}
+              placeholder="https://..."
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Form ID</p>
+              <input
+                className={builderInputClassName}
+                value={content.global.formId ?? ''}
+                onChange={(event) => setGlobalField('formId', event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Form Name</p>
+              <input
+                className={builderInputClassName}
+                value={content.global.formName ?? ''}
+                onChange={(event) => setGlobalField('formName', event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>Canal ID</p>
+              <input
+                className={builderInputClassName}
+                value={content.global.canalId ?? ''}
+                onChange={(event) => setGlobalField('canalId', event.target.value)}
+              />
+            </div>
+          </div>
           <BuilderImageField
             label="Logo"
             description="Logo exibida no cabeçalho do site."
@@ -455,6 +560,73 @@ export function BuilderEditorPanel({
             onChange={(nextValue) => setGlobalField('logo', nextValue)}
             onUploadImage={onUploadImage}
           />
+          <div className="space-y-3">
+            <p className={builderLabelClassName}>Menu do cabeçalho</p>
+            {(content.header?.menu?.length ? content.header.menu : DEFAULT_HEADER_MENU_ITEMS).map((item, index) => (
+              <div
+                key={`${item.sectionId}-${index}`}
+                className="grid grid-cols-1 gap-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-2.5 sm:grid-cols-[1fr_1.4fr]"
+              >
+                <input
+                  className={builderInputClassName}
+                  value={item.sectionId}
+                  placeholder="id-da-secao"
+                  onChange={(event) =>
+                    setHeaderField(
+                      'menu',
+                      (content.header?.menu?.length ? content.header.menu : DEFAULT_HEADER_MENU_ITEMS).map(
+                        (current, currentIndex) =>
+                          currentIndex === index ? { ...current, sectionId: event.target.value } : current,
+                      ),
+                    )
+                  }
+                />
+                <input
+                  className={builderInputClassName}
+                  value={item.label}
+                  placeholder="Rótulo do menu"
+                  onChange={(event) =>
+                    setHeaderField(
+                      'menu',
+                      (content.header?.menu?.length ? content.header.menu : DEFAULT_HEADER_MENU_ITEMS).map(
+                        (current, currentIndex) =>
+                          currentIndex === index ? { ...current, label: event.target.value } : current,
+                      ),
+                    )
+                  }
+                />
+              </div>
+            ))}
+            <p className={builderHintClassName}>
+              IDs esperados na página: forma-pagamento, cuidamos-tudo, sobre-nos, casos, como-funciona.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>CTA desktop</p>
+              <input
+                className={builderInputClassName}
+                value={content.header?.desktopCtaLabel ?? 'Fale no Whatsapp'}
+                onChange={(event) => setHeaderField('desktopCtaLabel', event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>CTA mobile</p>
+              <input
+                className={builderInputClassName}
+                value={content.header?.mobileCtaLabel ?? 'Fale no Whatsapp'}
+                onChange={(event) => setHeaderField('mobileCtaLabel', event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <p className={builderLabelClassName}>CTA mobile compacto</p>
+              <input
+                className={builderInputClassName}
+                value={content.header?.mobileCompactCtaLabel ?? 'WhatsApp'}
+                onChange={(event) => setHeaderField('mobileCompactCtaLabel', event.target.value)}
+              />
+            </div>
+          </div>
           <BuilderImageLayoutControls
             mode="logo"
             value={logoLayoutControlValue}
@@ -912,6 +1084,19 @@ export function BuilderEditorPanel({
               }))
             }
           />
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Alt da imagem</p>
+            <input
+              className={builderInputClassName}
+              value={content.proofBar?.imageAlt ?? '5.0 estrelas - 409 avaliações no Google'}
+              onChange={(event) =>
+                onContentChange((current) => ({
+                  ...current,
+                  proofBar: { ...(current.proofBar ?? { image: '' }), imageAlt: event.target.value },
+                }))
+              }
+            />
+          </div>
           <BuilderImageLayoutControls
             mode="cover"
             value={proofBarImageLayoutControlValue}
@@ -1057,6 +1242,19 @@ export function BuilderEditorPanel({
               }))
             }
           />
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Alt da imagem</p>
+            <input
+              className={builderInputClassName}
+              value={content.fullService?.imageAlt ?? 'Painéis solares fotovoltaicos de alta qualidade'}
+              onChange={(event) =>
+                onContentChange((current) => ({
+                  ...current,
+                  fullService: { ...(current.fullService ?? { image: '' }), imageAlt: event.target.value },
+                }))
+              }
+            />
+          </div>
           <BuilderImageLayoutControls
             mode="cover"
             value={fullServiceImageLayoutControlValue}
@@ -1184,6 +1382,19 @@ export function BuilderEditorPanel({
               }))
             }
           />
+          <div className="space-y-2">
+            <p className={builderLabelClassName}>Alt da imagem</p>
+            <input
+              className={builderInputClassName}
+              value={content.howItWorks?.imageAlt ?? 'Diagrama do sistema de energia solar fotovoltaica'}
+              onChange={(event) =>
+                onContentChange((current) => ({
+                  ...current,
+                  howItWorks: { ...(current.howItWorks ?? { image: '' }), imageAlt: event.target.value },
+                }))
+              }
+            />
+          </div>
           <BuilderImageLayoutControls
             mode="cover"
             value={howItWorksImageLayoutControlValue}
@@ -1197,6 +1408,120 @@ export function BuilderEditorPanel({
     if (sectionId === 'showcase') {
       return (
         <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <p className={builderLabelClassName}>Título (destaque)</p>
+              <input
+                className={builderInputClassName}
+                value={content.showcase.titleHighlight ?? '+ 1000'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    showcase: {
+                      ...current.showcase,
+                      titleHighlight: event.target.value,
+                    },
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <p className={builderLabelClassName}>Título (sufixo)</p>
+              <input
+                className={builderInputClassName}
+                value={content.showcase.titleSuffix ?? 'projetos realizados'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    showcase: {
+                      ...current.showcase,
+                      titleSuffix: event.target.value,
+                    },
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <p className={builderLabelClassName}>Subtítulo</p>
+            <textarea
+              className={builderTextAreaClassName}
+              rows={2}
+              value={content.showcase.subtitle ?? 'Projetos reais implementados com resultados comprovados'}
+              onChange={(event) =>
+                onContentChange((current) => ({
+                  ...current,
+                  showcase: {
+                    ...current.showcase,
+                    subtitle: event.target.value,
+                  },
+                }))
+              }
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <p className={builderLabelClassName}>Rótulo localização</p>
+              <input
+                className={builderInputClassName}
+                value={content.showcase.labels?.location ?? 'Localização'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    showcase: {
+                      ...current.showcase,
+                      labels: {
+                        location: event.target.value,
+                        system: current.showcase.labels?.system ?? 'Sistema',
+                        annualSavings: current.showcase.labels?.annualSavings ?? 'Economia anual',
+                      },
+                    },
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <p className={builderLabelClassName}>Rótulo sistema</p>
+              <input
+                className={builderInputClassName}
+                value={content.showcase.labels?.system ?? 'Sistema'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    showcase: {
+                      ...current.showcase,
+                      labels: {
+                        location: current.showcase.labels?.location ?? 'Localização',
+                        system: event.target.value,
+                        annualSavings: current.showcase.labels?.annualSavings ?? 'Economia anual',
+                      },
+                    },
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <p className={builderLabelClassName}>Rótulo economia</p>
+              <input
+                className={builderInputClassName}
+                value={content.showcase.labels?.annualSavings ?? 'Economia anual'}
+                onChange={(event) =>
+                  onContentChange((current) => ({
+                    ...current,
+                    showcase: {
+                      ...current.showcase,
+                      labels: {
+                        location: current.showcase.labels?.location ?? 'Localização',
+                        system: current.showcase.labels?.system ?? 'Sistema',
+                        annualSavings: event.target.value,
+                      },
+                    },
+                  }))
+                }
+              />
+            </div>
+          </div>
+
           {content.showcase.projects.length === 0 ? (
             <p className={builderHintClassName}>Nenhum projeto cadastrado no showcase.</p>
           ) : null}
@@ -1347,7 +1672,7 @@ export function BuilderEditorPanel({
             onChange={(nextValue) =>
               onContentChange((current) => ({
                 ...current,
-                howItWorks: { image: nextValue },
+                howItWorks: { ...(current.howItWorks ?? { image: '' }), image: nextValue },
               }))
             }
           />
@@ -1365,7 +1690,7 @@ export function BuilderEditorPanel({
             onChange={(nextValue) =>
               onContentChange((current) => ({
                 ...current,
-                proofBar: { image: nextValue },
+                proofBar: { ...(current.proofBar ?? { image: '' }), image: nextValue },
               }))
             }
           />
@@ -1383,7 +1708,7 @@ export function BuilderEditorPanel({
             onChange={(nextValue) =>
               onContentChange((current) => ({
                 ...current,
-                fullService: { image: nextValue },
+                fullService: { ...(current.fullService ?? { image: '' }), image: nextValue },
               }))
             }
           />
@@ -1663,6 +1988,9 @@ export function BuilderEditorPanel({
                 <AccordionItem
                   key={section.id}
                   value={section.id}
+                  ref={(element) => {
+                    sectionItemRefs.current[section.id] = element;
+                  }}
                   data-builder-section-id={section.id}
                   className={cn(
                     'overflow-hidden rounded-[12px] border bg-[rgba(15,23,42,0.58)] px-2.5',
@@ -1684,7 +2012,13 @@ export function BuilderEditorPanel({
                       </p>
                     </div>
                   </AccordionTrigger>
-                  <AccordionContent className="pb-2.5 pt-1 text-[var(--builder-text-primary)]">
+                  <AccordionContent
+                    ref={(element) => {
+                      sectionContentRefs.current[section.id] = element;
+                    }}
+                    data-builder-section-content-id={section.id}
+                    className="pb-2.5 pt-1 text-[var(--builder-text-primary)]"
+                  >
                     {renderSectionEditor(section.id)}
                   </AccordionContent>
                 </AccordionItem>

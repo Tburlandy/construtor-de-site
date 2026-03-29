@@ -8,6 +8,7 @@ const DEFAULT_DOMAIN = 'https://www.efitecsolar.com';
 const DATA_PROJECTS_ROOT = path.resolve('data', 'projects');
 const DIST_ROOT = path.resolve('dist');
 const ARTIFACTS_ROOT = path.resolve('artifacts', 'clients');
+const LEGACY_CONTENT_PATH = path.resolve('content', 'content.json');
 
 type JsonLike = Record<string, unknown>;
 
@@ -78,6 +79,20 @@ function maybeRecord(value: unknown): JsonLike | null {
     return null;
   }
   return value as JsonLike;
+}
+
+function normalizeGtmId(rawValue: unknown): string | null {
+  if (typeof rawValue !== 'string') {
+    return null;
+  }
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!/^[A-Za-z0-9_-]+$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
 }
 
 async function readJsonIfExists(filePath: string): Promise<unknown | null> {
@@ -173,6 +188,51 @@ async function resolveBuildConfig(clientId: ProjectId): Promise<ClientExportBuil
   return { basePath, domain };
 }
 
+async function resolveClientGtmId(clientId: ProjectId): Promise<string | null> {
+  const contentPath = path.join(DATA_PROJECTS_ROOT, clientId, 'content.json');
+  const contentRecord = maybeRecord(await readJsonIfExists(contentPath));
+  const content = maybeRecord(contentRecord?.content);
+  const global = maybeRecord(content?.global);
+  const projectGtmId = normalizeGtmId(global?.gtmId);
+  if (projectGtmId) {
+    return projectGtmId;
+  }
+
+  const legacyContent = maybeRecord(await readJsonIfExists(LEGACY_CONTENT_PATH));
+  const legacyGlobal = maybeRecord(legacyContent?.global);
+  return normalizeGtmId(legacyGlobal?.gtmId);
+}
+
+async function hardcodeClientGtmIntoDistIndex(clientId: ProjectId): Promise<void> {
+  const gtmId = await resolveClientGtmId(clientId);
+  if (!gtmId) {
+    return;
+  }
+
+  const indexPath = path.join(DIST_ROOT, 'index.html');
+  const rawIndexHtml = await fs.readFile(indexPath, 'utf-8');
+  const withoutPreviousMarkers = rawIndexHtml
+    .replace(/<!-- CLIENT ZIP GTM HEAD START -->[\s\S]*?<!-- CLIENT ZIP GTM HEAD END -->\s*/g, '')
+    .replace(/<!-- CLIENT ZIP GTM BODY START -->[\s\S]*?<!-- CLIENT ZIP GTM BODY END -->\s*/g, '');
+
+  const headInjection = [
+    '    <!-- CLIENT ZIP GTM HEAD START -->',
+    `    <script async src="https://www.googletagmanager.com/gtm.js?id=${gtmId}" data-gtm-id="${gtmId}"></script>`,
+    '    <!-- CLIENT ZIP GTM HEAD END -->',
+    '',
+  ].join('\n');
+  const bodyInjection = [
+    '    <!-- CLIENT ZIP GTM BODY START -->',
+    `    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=${gtmId}" height="0" width="0" style="display:none;visibility:hidden" data-gtm-noscript="${gtmId}"></iframe></noscript>`,
+    '    <!-- CLIENT ZIP GTM BODY END -->',
+    '',
+  ].join('\n');
+
+  const withHead = withoutPreviousMarkers.replace('</head>', `${headInjection}</head>`);
+  const withBody = withHead.replace(/<body([^>]*)>\s*/i, `<body$1>\n${bodyInjection}`);
+  await fs.writeFile(indexPath, withBody, 'utf-8');
+}
+
 type RunCommandOptions = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
@@ -258,6 +318,8 @@ async function buildClientDist(clientId: ProjectId, config: ClientExportBuildCon
   await runCommand(process.execPath, [path.resolve('scripts', 'generate-project-seo-artifacts.mjs')], {
     env,
   });
+
+  await hardcodeClientGtmIntoDistIndex(clientId);
 }
 
 function buildDownloadUrl(clientId: ProjectId, fileName: string): string {

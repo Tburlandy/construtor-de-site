@@ -70,7 +70,7 @@ export const HowItWorks = () => {
             <div className="overflow-hidden rounded-xl md:rounded-2xl shadow-lg">
               <img 
                 src={diagramImage.startsWith('/') || diagramImage.startsWith('http') ? diagramImage : solarDiagram} 
-                alt="Diagrama do sistema de energia solar fotovoltaica"
+                alt={content?.howItWorks?.imageAlt || 'Diagrama do sistema de energia solar fotovoltaica'}
                 className="aspect-[16/10] w-full h-full object-cover"
                 style={{
                   objectPosition: `${diagramImageLayout.x}% ${diagramImageLayout.y}%`,

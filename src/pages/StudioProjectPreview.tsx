@@ -34,16 +34,16 @@ const CLICK_SECTION_MAP: Array<{ selector: string; sectionId: BuilderSectionId }
 ];
 
 const SECTION_SELECTORS: Record<BuilderSectionId, string[]> = {
-  global: ['section', 'header'],
-  seo: ['section', 'header'],
+  global: ['header', 'section'],
+  seo: ['header', 'section'],
   hero: ['section'],
   financing: ['#forma-pagamento'],
-  benefits: ['#sobre-nos'],
+  benefits: ['#cuidamos-tudo'],
   proofBar: ['#sobre-nos'],
   fullService: ['#cuidamos-tudo'],
-  howItWorks: ['#como-funciona'],
   showcase: ['#casos'],
-  media: ['#como-funciona', '#cuidamos-tudo', '#sobre-nos'],
+  howItWorks: ['#como-funciona'],
+  media: ['#cuidamos-tudo', '#sobre-nos', '#como-funciona'],
   cta: ['#contato'],
   footer: ['footer'],
 };

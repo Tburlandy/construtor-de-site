@@ -53,6 +53,15 @@ export const Cases = () => {
         imageLayout: project.imageLayout,
       }))
     : defaultCases;
+  const showcaseTitleHighlight = content?.showcase.titleHighlight || '+ 1000';
+  const showcaseTitleSuffix = content?.showcase.titleSuffix || 'projetos realizados';
+  const showcaseSubtitle =
+    content?.showcase.subtitle || 'Projetos reais implementados com resultados comprovados';
+  const showcaseLabels = content?.showcase.labels ?? {
+    location: 'Localização',
+    system: 'Sistema',
+    annualSavings: 'Economia anual',
+  };
 
   return (
     <section id="casos" className="py-12 md:py-24 bg-secondary/30">
@@ -61,10 +70,11 @@ export const Cases = () => {
         <RevealOnScroll>
           <div className="text-center mb-12 md:mb-16">
             <h2 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold mb-3 md:mb-4">
-              <span className="bg-text-gradient bg-clip-text text-transparent">+ 1000</span> projetos realizados
+              <span className="bg-text-gradient bg-clip-text text-transparent">{showcaseTitleHighlight}</span>{' '}
+              {showcaseTitleSuffix}
             </h2>
             <p className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto px-4">
-              Projetos reais implementados com resultados comprovados
+              {showcaseSubtitle}
             </p>
           </div>
         </RevealOnScroll>
@@ -117,20 +127,20 @@ export const Cases = () => {
                         <span className="text-lg font-bold">{caseItem.tipo}</span>
                       </div>
                       <div className="flex items-center justify-between pb-2 border-b border-border">
-                        <span className="text-sm text-muted-foreground">Localização</span>
+                        <span className="text-sm text-muted-foreground">{showcaseLabels.location}</span>
                         <span className="font-semibold">{caseItem.bairro}</span>
                       </div>
 
                       {caseItem.modulos > 0 && (
                         <div className="flex items-center justify-between pb-2 border-b border-border">
-                          <span className="text-sm text-muted-foreground">Sistema</span>
+                          <span className="text-sm text-muted-foreground">{showcaseLabels.system}</span>
                           <span className="font-semibold text-primary">{caseItem.modulos} módulos {caseItem.potenciaModulo}W</span>
                         </div>
                       )}
 
                       {caseItem.economia > 0 && (
                         <div className="flex items-center justify-between">
-                          <span className="text-sm text-muted-foreground">Economia anual</span>
+                          <span className="text-sm text-muted-foreground">{showcaseLabels.annualSavings}</span>
                           <span className="font-semibold text-primary">
                             R$ {caseItem.economia.toLocaleString('pt-BR')}
                           </span>

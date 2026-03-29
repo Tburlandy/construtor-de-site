@@ -25,6 +25,16 @@ const ProjectSchema = z.object({
 });
 
 const ShowcaseSchema = z.object({
+  titleHighlight: z.string().optional(),
+  titleSuffix: z.string().optional(),
+  subtitle: z.string().optional(),
+  labels: z
+    .object({
+      location: z.string(),
+      system: z.string(),
+      annualSavings: z.string(),
+    })
+    .optional(),
   projects: z.array(ProjectSchema),
 });
 
@@ -48,6 +58,11 @@ const StatItemSchema = z.object({
 const SimpleTextItemSchema = z.object({
   title: z.string(),
   description: z.string(),
+});
+
+const HeaderMenuItemSchema = z.object({
+  sectionId: z.string(),
+  label: z.string(),
 });
 
 const ImageLayoutSchema = z.object({
@@ -106,6 +121,14 @@ export const ContentSchema = z.object({
     stats: z.array(StatItemSchema).optional(),
     background: z.string(),
   }),
+  header: z
+    .object({
+      menu: z.array(HeaderMenuItemSchema).optional(),
+      desktopCtaLabel: z.string().optional(),
+      mobileCtaLabel: z.string().optional(),
+      mobileCompactCtaLabel: z.string().optional(),
+    })
+    .optional(),
   financing: z
     .object({
       badge: z.string(),
@@ -120,6 +143,7 @@ export const ContentSchema = z.object({
   showcase: ShowcaseSchema,
   howItWorks: z.object({
     image: z.string(),
+    imageAlt: z.string().optional(),
     titlePrefix: z.string().optional(),
     titleHighlight: z.string().optional(),
     subtitle: z.string().optional(),

@@ -101,16 +101,16 @@ function injectGtm(gtmId: string) {
     return;
   }
 
+  const existingScript = document.querySelector(`script[data-gtm-id="${gtmId}"]`);
+  if (existingScript) {
+    return;
+  }
+
   window.dataLayer = window.dataLayer || [];
   window.dataLayer.push({
     "gtm.start": new Date().getTime(),
     event: "gtm.js",
   });
-
-  const existingScript = document.querySelector(`script[data-gtm-id="${gtmId}"]`);
-  if (existingScript) {
-    return;
-  }
 
   const script = document.createElement("script");
   script.async = true;
