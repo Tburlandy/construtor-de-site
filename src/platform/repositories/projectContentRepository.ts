@@ -5,7 +5,7 @@ import {
   ProjectSchema,
   type ProjectContentRecord,
   type ProjectId,
-} from '../contracts';
+} from '../contracts/index.js';
 
 const CONTENT_FILENAME = 'content.json';
 const DEFAULT_PROJECTS_ROOT_DIR = path.resolve('data', 'projects');

@@ -107,31 +107,48 @@ export function BuilderSidebar({
         </div>
         <button
           type="button"
-          className="hidden h-8 w-8 items-center justify-center rounded-full border border-[var(--builder-border)] bg-[rgba(7,15,31,0.72)] text-[var(--builder-text-muted)] transition hover:text-[var(--builder-text-primary)] lg:inline-flex"
+          className="hidden size-8 place-items-center rounded-full border border-[var(--builder-border)] bg-[rgba(7,15,31,0.72)] p-0 leading-none text-[var(--builder-text-muted)] transition hover:text-[var(--builder-text-primary)] lg:grid"
           onClick={onToggleCollapsed}
           aria-label={collapsed ? 'Expandir sidebar' : 'Recolher sidebar'}
         >
-          {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          {expanded ? (
+            <ChevronLeft className="size-4 shrink-0 stroke-[2] block" aria-hidden />
+          ) : (
+            <ChevronRight className="size-4 shrink-0 stroke-[2] block" aria-hidden />
+          )}
         </button>
       </div>
 
       <div className={cn('builder-scroll min-h-0 overflow-y-auto p-2', expanded ? 'flex-1' : 'flex-none')}>
-        <nav className="space-y-1.5">
+        <nav
+          className={cn(
+            'space-y-1.5',
+            !expanded && 'lg:flex lg:flex-col lg:items-center lg:space-y-0 lg:gap-1.5',
+          )}
+        >
           {modules.map((module) => {
             const Icon = module.icon;
             const isActiveModule = module.id === activeModuleId;
             const baseClassName = cn(
-              'group flex w-full items-center rounded-[10px] border px-2 py-1.5 text-[12px] transition',
+              'group flex w-full items-center rounded-[10px] border text-[12px] transition',
+              expanded ? 'px-2 py-1.5' : 'px-2 py-1.5 lg:h-8 lg:w-8 lg:shrink-0 lg:justify-center lg:!p-0',
               isActiveModule
                 ? 'border-[rgba(14,165,233,0.35)] bg-[rgba(14,165,233,0.16)] text-[var(--builder-brand-primary)] shadow-[0_0_20px_rgba(14,165,233,0.15)]'
-                : 'border-transparent text-[var(--builder-text-secondary)] hover:border-[var(--builder-border)] hover:bg-[var(--builder-bg-surface-highlight)] hover:text-[var(--builder-text-primary)]',
+                : cn(
+                    'border-transparent text-[var(--builder-text-secondary)] hover:border-[var(--builder-border)] hover:bg-[var(--builder-bg-surface-highlight)] hover:text-[var(--builder-text-primary)]',
+                    !expanded && 'lg:bg-[rgba(15,23,42,0.5)] lg:hover:bg-[var(--builder-bg-surface-highlight)]',
+                  ),
+            );
+            const labelClassName = cn(
+              'truncate',
+              expanded ? 'ml-2.5' : 'ml-2.5 lg:sr-only lg:ml-0',
             );
 
             if (module.href) {
               return (
-                <Link key={module.id} to={module.href} className={baseClassName}>
+                <Link key={module.id} to={module.href} className={baseClassName} title={module.label}>
                   <Icon className="h-4 w-4 shrink-0" />
-                  <span className={cn('ml-2.5 truncate', !expanded && 'lg:hidden')}>{module.label}</span>
+                  <span className={labelClassName}>{module.label}</span>
                 </Link>
               );
             }
@@ -140,6 +157,7 @@ export function BuilderSidebar({
               <button
                 key={module.id}
                 type="button"
+                title={module.label}
                 className={baseClassName}
                 onClick={() => {
                   if (module.id !== 'clients') {
@@ -148,7 +166,7 @@ export function BuilderSidebar({
                 }}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className={cn('ml-2.5 truncate', !expanded && 'lg:hidden')}>{module.label}</span>
+                <span className={labelClassName}>{module.label}</span>
               </button>
             );
           })}
@@ -181,7 +199,7 @@ export function BuilderSidebar({
       </div>
 
       {!expanded ? (
-        <div className="hidden border-t-2 border-[rgba(99,120,160,0.5)] mt-3 mb-2 px-2 pt-3 pb-2 text-xs text-[var(--builder-text-secondary)] lg:flex lg:flex-col lg:gap-0">
+        <div className="hidden border-t-2 border-[rgba(99,120,160,0.5)] mt-3 mb-2 px-2 pt-3 pb-2 text-xs text-[var(--builder-text-secondary)] lg:flex lg:flex-col lg:items-center lg:gap-1.5">
           {sections.map((section) => {
             const Icon = sectionIcons[section.id];
             return (

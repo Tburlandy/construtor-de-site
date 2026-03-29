@@ -8,7 +8,7 @@ import {
   type JsonValue,
   type ProjectId,
   type ProjectVersionRecord,
-} from '../contracts';
+} from '../contracts/index.js';
 
 const DEFAULT_PROJECTS_ROOT_DIR = path.resolve('data', 'projects');
 const VERSIONS_DIRNAME = 'versions';

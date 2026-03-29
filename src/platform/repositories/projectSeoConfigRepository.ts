@@ -5,7 +5,7 @@ import {
   ProjectSeoConfigSchema,
   type ProjectId,
   type ProjectSeoConfig,
-} from '../contracts';
+} from '../contracts/index.js';
 
 const SEO_FILENAME = 'seo.json';
 const DEFAULT_PROJECTS_ROOT_DIR = path.resolve('data', 'projects');

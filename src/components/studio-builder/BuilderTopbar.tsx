@@ -59,6 +59,19 @@ function formatSavedAt(isoDate: string | null): string {
   })}`;
 }
 
+function formatProjectStatusLabel(status: ProjectMetadata['status']): string {
+  switch (status) {
+    case 'draft':
+      return 'Rascunho';
+    case 'active':
+      return 'Ativo';
+    case 'archived':
+      return 'Arquivado';
+    default:
+      return status;
+  }
+}
+
 export function BuilderTopbar({
   project,
   projects,
@@ -158,7 +171,7 @@ export function BuilderTopbar({
                     {loadingProjects
                       ? 'Carregando clientes...'
                       : currentClientLabel
-                        ? `${currentClientLabel} (${currentProjectId})`
+                        ? currentClientLabel
                         : 'Selecione um cliente'}
                   </span>
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-[var(--builder-text-secondary)]" />
@@ -265,7 +278,7 @@ export function BuilderTopbar({
           <span>{saveStatusLabel}</span>
           {project ? (
             <span className="rounded-full border border-[var(--builder-border)] px-2 py-0.5 font-semibold uppercase tracking-[0.08em] text-[var(--builder-text-muted)]">
-              {project.status}
+              {formatProjectStatusLabel(project.status)}
             </span>
           ) : null}
         </div>

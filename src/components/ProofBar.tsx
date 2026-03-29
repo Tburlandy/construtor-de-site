@@ -134,11 +134,11 @@ export const ProofBar = ({ onOpenPopup }: ProofBarProps) => {
                 <div className="absolute -inset-2 bg-primary/20 rounded-3xl blur-xl group-hover:bg-primary/30 transition duration-500" />
                 
                 {/* Image container */}
-                <div className="relative overflow-hidden rounded-2xl">
+                <div className="relative overflow-hidden rounded-2xl bg-muted/25">
                   <img 
                     src={reviewsImage.startsWith('/') || reviewsImage.startsWith('http') ? reviewsImage : googleReviewsImage} 
                     alt={content?.proofBar?.imageAlt || '5.0 estrelas - 409 avaliações no Google'} 
-                    className="relative z-10 aspect-[4/3] w-full h-full object-cover shadow-elegant transition-transform duration-500"
+                    className="relative z-10 aspect-[4/3] w-full h-full object-contain shadow-elegant transition-transform duration-500"
                     style={{
                       objectPosition: `${reviewsImageLayout.x}% ${reviewsImageLayout.y}%`,
                       transformOrigin: `${reviewsImageLayout.x}% ${reviewsImageLayout.y}%`,

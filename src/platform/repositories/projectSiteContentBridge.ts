@@ -1,8 +1,8 @@
-import { ContentSchema, type Content } from '../../content/schema';
+import { ContentSchema, type Content } from '../../content/schema.js';
 import {
   ProjectContentRecordSchema,
   type ProjectContentRecord,
-} from '../contracts';
+} from '../contracts/index.js';
 
 /** Versão lógica do envelope `ProjectContentRecord` para evolução futura do arquivo. */
 export const PROJECT_SITE_CONTENT_RECORD_SCHEMA_VERSION = '1';

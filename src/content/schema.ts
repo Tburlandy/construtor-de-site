@@ -8,7 +8,7 @@ const BenefitSchema = z.object({
 });
 
 const ProjectImageLayoutSchema = z.object({
-  scale: z.number().min(1).max(2.5).optional(),
+  scale: z.number().min(0.4).max(2.5).optional(),
   x: z.number().min(0).max(100).optional(),
   y: z.number().min(0).max(100).optional(),
 });
@@ -45,7 +45,7 @@ const LogoImageLayoutSchema = z.object({
 });
 
 const CoverImageLayoutSchema = z.object({
-  scale: z.number().min(1).max(2.5).optional(),
+  scale: z.number().min(0.4).max(2.5).optional(),
   x: z.number().min(0).max(100).optional(),
   y: z.number().min(0).max(100).optional(),
 });

@@ -17,7 +17,8 @@ export interface NormalizedLogoImageLayout {
   y: number;
 }
 
-const COVER_SCALE_RANGE: NumericRange = { min: 1, max: 2.5 };
+/** Abaixo de 1 reduz o zoom (menos crop); acima de 1 aproxima. */
+const COVER_SCALE_RANGE: NumericRange = { min: 0.4, max: 2.5 };
 const COVER_X_RANGE: NumericRange = { min: 0, max: 100 };
 const COVER_Y_RANGE: NumericRange = { min: 0, max: 100 };
 

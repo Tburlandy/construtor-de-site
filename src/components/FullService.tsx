@@ -42,11 +42,11 @@ export const FullService = ({ onOpenPopup }: FullServiceProps) => {
             {/* Image side */}
             <div className="relative">
               <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent rounded-3xl blur-3xl" />
-              <div className="relative z-10 overflow-hidden rounded-3xl">
+              <div className="relative z-10 overflow-hidden rounded-3xl bg-muted/25">
                 <img 
                   src={panelsImage.startsWith('/') || panelsImage.startsWith('http') ? panelsImage : solarPanelsImage} 
                   alt={content?.fullService?.imageAlt || 'Painéis solares fotovoltaicos de alta qualidade'} 
-                  className="aspect-[4/3] w-full h-full object-cover drop-shadow-2xl"
+                  className="aspect-[4/3] w-full h-full object-contain drop-shadow-2xl"
                   style={{
                     objectPosition: `${panelsImageLayout.x}% ${panelsImageLayout.y}%`,
                     transformOrigin: `${panelsImageLayout.x}% ${panelsImageLayout.y}%`,

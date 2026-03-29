@@ -5,10 +5,10 @@ import {
   ProjectSchema,
   type PublicationRecord,
   type ProjectMetadata,
-} from '../contracts';
-import type { ProjectContentRepository } from '../repositories/projectContentRepository';
-import type { ProjectMetadataRepository } from '../repositories/projectMetadataRepository';
-import type { ProjectPublicationRepository } from '../repositories/projectPublicationRepository';
+} from '../contracts/index.js';
+import type { ProjectContentRepository } from '../repositories/projectContentRepository.js';
+import type { ProjectMetadataRepository } from '../repositories/projectMetadataRepository.js';
+import type { ProjectPublicationRepository } from '../repositories/projectPublicationRepository.js';
 
 const CreateProjectBodySchema = ProjectMetadataSchema.pick({
   name: true,
@@ -190,6 +190,22 @@ export async function updateProjectMetadata(
   });
 
   return repo.save(updated);
+}
+
+export async function deleteProject(
+  repo: ProjectMetadataRepository,
+  projectId: string,
+): Promise<ProjectMetadata> {
+  const parsedProjectId = parseProjectIdOrThrow(projectId);
+  const current = await repo.getByProjectId(parsedProjectId);
+  if (!current) {
+    throw new ProjectsApiError(404, 'Projeto não encontrado', {
+      projectId: parsedProjectId,
+    });
+  }
+
+  await repo.deleteByProjectId(parsedProjectId);
+  return current;
 }
 
 export async function listProjectPublications(

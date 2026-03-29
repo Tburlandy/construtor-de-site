@@ -1,9 +1,9 @@
-import { ContentSchema, type Content } from '../../content/schema';
+import { ContentSchema, type Content } from '../../content/schema.js';
 import {
   ProjectSeoConfigSchema,
   type ProjectId,
   type ProjectSeoConfig,
-} from '../contracts';
+} from '../contracts/index.js';
 
 type SiteSeo = Content['seo'];
 

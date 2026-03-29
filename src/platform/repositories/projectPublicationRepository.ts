@@ -6,7 +6,7 @@ import {
   PublicationRecordSchema,
   type ProjectId,
   type PublicationRecord,
-} from '../contracts';
+} from '../contracts/index.js';
 
 const DEFAULT_PROJECTS_ROOT_DIR = path.resolve('data', 'projects');
 const PUBLICATIONS_DIRNAME = 'publications';

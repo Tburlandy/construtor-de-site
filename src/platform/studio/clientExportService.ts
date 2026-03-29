@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { ProjectSchema, type ProjectId } from '../contracts';
+import { ProjectSchema, type ProjectId } from '../contracts/index.js';
 
 const DEFAULT_BASE_PATH = '/pagina/';
 const DEFAULT_DOMAIN = 'https://www.efitecsolar.com';

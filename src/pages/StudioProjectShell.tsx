@@ -13,6 +13,15 @@ import {
 } from '@/components/ui/dialog';
 import { BuilderEditorPanel } from '@/components/studio-builder/BuilderEditorPanel';
 import {
+  BuilderImageField,
+  BuilderImageLayoutControls,
+  builderInputClassName,
+  builderLabelClassName,
+  builderPrimaryButtonClassName,
+  builderSecondaryButtonClassName,
+  builderTextAreaClassName,
+} from '@/components/studio-builder/editors/BuilderEditorFields';
+import {
   BuilderHistoryPanel,
   type BuilderContentVersionSummary,
 } from '@/components/studio-builder/BuilderHistoryPanel';
@@ -23,13 +32,7 @@ import {
 import { BuilderTopbar } from '@/components/studio-builder/BuilderTopbar';
 import { BUILDER_SECTIONS, type BuilderSectionId, type BuilderTabId } from '@/components/studio-builder/builderSections';
 import { BuilderPreviewPane } from '@/components/studio-builder/preview/BuilderPreviewPane';
-import {
-  builderInputClassName,
-  builderLabelClassName,
-  builderPrimaryButtonClassName,
-  builderSecondaryButtonClassName,
-  builderTextAreaClassName,
-} from '@/components/studio-builder/editors/BuilderEditorFields';
+import { normalizeLogoImageLayout } from '@/lib/imageLayout';
 import '@/components/studio-builder/builderTheme.css';
 
 function decodeProjectId(raw?: string): string {
@@ -1003,6 +1006,8 @@ export default function StudioProjectShell() {
     );
   }
 
+  const logoLayoutControlValue = normalizeLogoImageLayout(content.imageLayout?.logo);
+
   return (
     <div className="studio-builder flex h-screen flex-col overflow-hidden bg-[var(--builder-bg-page)] text-[var(--builder-text-primary)]">
       <BuilderTopbar
@@ -1056,7 +1061,7 @@ export default function StudioProjectShell() {
                     Configurações do Cliente
                   </h2>
                   <p className="mt-2 text-xs text-[var(--builder-text-secondary)]">
-                    Ajuste GTM e integrações de lead do cliente atual.
+                    Dados centrais da marca e integrações do cliente atual.
                   </p>
                   <p className="mt-1 text-xs text-[var(--builder-text-muted)]">
                     As alterações são salvas pelo botão "Salvar" do topo.
@@ -1065,6 +1070,151 @@ export default function StudioProjectShell() {
 
                 <div className="builder-scroll flex-1 overflow-y-auto p-3">
                   <div className="grid gap-3">
+                    <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>Nome da marca</p>
+                      <input
+                        className={builderInputClassName}
+                        value={content.global.brand}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              brand: event.target.value,
+                            },
+                          }))
+                        }
+                        placeholder="Ex.: EFITEC SOLAR"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>Cidade</p>
+                      <input
+                        className={builderInputClassName}
+                        value={content.global.city}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              city: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>WhatsApp (E.164)</p>
+                      <input
+                        className={builderInputClassName}
+                        value={content.global.whatsappE164}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              whatsappE164: event.target.value,
+                            },
+                          }))
+                        }
+                        placeholder="5521999999999"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>URL do site</p>
+                      <input
+                        className={builderInputClassName}
+                        value={content.global.siteUrl}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              siteUrl: event.target.value,
+                            },
+                          }))
+                        }
+                        placeholder="https://www.exemplo.com"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>CNPJ</p>
+                      <input
+                        className={builderInputClassName}
+                        value={content.global.cnpj}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              cnpj: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>Endereço</p>
+                      <textarea
+                        className={builderTextAreaClassName}
+                        rows={3}
+                        value={content.global.address}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              address: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
+                    <BuilderImageField
+                      label="Logo"
+                      description="Logo exibida no cabeçalho do site."
+                      value={content.global.logo ?? ''}
+                      onChange={(nextValue) =>
+                        handleContentChange((current) => ({
+                          ...current,
+                          global: {
+                            ...current.global,
+                            logo: nextValue,
+                          },
+                        }))
+                      }
+                      onUploadImage={handleUploadImage}
+                    />
+                    <BuilderImageLayoutControls
+                      mode="logo"
+                      value={logoLayoutControlValue}
+                      onChange={(nextValue) =>
+                        handleContentChange((current) => ({
+                          ...current,
+                          imageLayout: {
+                            ...(current.imageLayout ?? {}),
+                            logo: {
+                              scale: nextValue.scale,
+                              x: nextValue.x,
+                              y: nextValue.y,
+                            },
+                          },
+                        }))
+                      }
+                      onReset={() =>
+                        handleContentChange((current) => {
+                          const nextImageLayout = { ...(current.imageLayout ?? {}) };
+                          delete nextImageLayout.logo;
+                          return {
+                            ...current,
+                            imageLayout: Object.keys(nextImageLayout).length ? nextImageLayout : undefined,
+                          };
+                        })
+                      }
+                    />
+
+                    <div className="my-1 border-t border-[var(--builder-border)]" />
+
                     <div className="space-y-1.5">
                       <p className={builderLabelClassName}>Google Tag Manager ID</p>
                       <input

@@ -25,9 +25,9 @@ export interface BuilderSection {
 export const BUILDER_SECTIONS: BuilderSection[] = [
   {
     id: 'global',
-    title: 'Obrigatórios',
-    description: 'Marca, cidade e dados globais do projeto.',
-    group: 'Obrigatórios',
+    title: 'Menu',
+    description: 'Navegação e CTAs do cabeçalho.',
+    group: 'Conteúdo',
     editable: true,
   },
   {

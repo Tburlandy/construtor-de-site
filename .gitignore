@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+
+# Builds locais / temporários
+artifacts/
+tmp/
+
+# Cache local do Supabase CLI (refs/URLs — não versionar)
+supabase/.temp/

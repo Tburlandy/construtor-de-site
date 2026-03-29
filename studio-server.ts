@@ -4,6 +4,7 @@ import multer from 'multer';
 import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { z } from 'zod';
 import { ContentSchema, type Content } from './src/content/schema.js';
@@ -13,6 +14,14 @@ import { createProjectMetadataRepository } from './src/platform/repositories/pro
 import { createProjectPublicationRepository } from './src/platform/repositories/projectPublicationRepository.js';
 import { createProjectSeoConfigRepository } from './src/platform/repositories/projectSeoConfigRepository.js';
 import { createProjectVersionRepository } from './src/platform/repositories/projectVersionRepository.js';
+import {
+  createSupabaseProjectContentRepository,
+  createSupabaseProjectMetadataRepository,
+  createSupabaseProjectPublicationRepository,
+  createSupabaseProjectSeoConfigRepository,
+  createSupabaseProjectVersionRepository,
+  createSupabaseStudioClient,
+} from './src/platform/repositories/supabaseStudioRepositories.js';
 import {
   buildProjectContentRecord,
   parseGlobalSiteContentJson,
@@ -25,6 +34,7 @@ import {
 import {
   ProjectsApiError,
   createProject,
+  deleteProject,
   duplicateProject,
   getProjectById,
   listProjectPublications,
@@ -56,23 +66,42 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const projectsDataRoot = path.join(__dirname, 'data', 'projects');
+const tmpPath = path.join(os.tmpdir(), 'studio-uploads');
+const supabaseStudio = createSupabaseStudioClient({
+  supabaseUrl: process.env.SUPABASE_URL,
+  serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  storageBucket: process.env.SUPABASE_STORAGE_BUCKET || 'studio-media',
+});
+const supabaseClient = supabaseStudio?.client ?? null;
+const supabaseStorageBucket = supabaseStudio?.storageBucket ?? null;
+const hasSupabasePersistence = Boolean(supabaseClient);
 
 /** Instância alinhada ao layout da ADR; rotas HTTP em cards F2+. */
-export const projectMetadataRepository = createProjectMetadataRepository({
-  projectsRootDir: projectsDataRoot,
-});
-export const projectContentRepository = createProjectContentRepository({
-  projectsRootDir: projectsDataRoot,
-});
-export const projectPublicationRepository = createProjectPublicationRepository({
-  projectsRootDir: projectsDataRoot,
-});
-export const projectSeoConfigRepository = createProjectSeoConfigRepository({
-  projectsRootDir: projectsDataRoot,
-});
-export const projectVersionRepository = createProjectVersionRepository({
-  projectsRootDir: projectsDataRoot,
-});
+export const projectMetadataRepository = supabaseClient
+  ? createSupabaseProjectMetadataRepository(supabaseClient)
+  : createProjectMetadataRepository({
+      projectsRootDir: projectsDataRoot,
+    });
+export const projectContentRepository = supabaseClient
+  ? createSupabaseProjectContentRepository(supabaseClient)
+  : createProjectContentRepository({
+      projectsRootDir: projectsDataRoot,
+    });
+export const projectPublicationRepository = supabaseClient
+  ? createSupabaseProjectPublicationRepository(supabaseClient)
+  : createProjectPublicationRepository({
+      projectsRootDir: projectsDataRoot,
+    });
+export const projectSeoConfigRepository = supabaseClient
+  ? createSupabaseProjectSeoConfigRepository(supabaseClient)
+  : createProjectSeoConfigRepository({
+      projectsRootDir: projectsDataRoot,
+    });
+export const projectVersionRepository = supabaseClient
+  ? createSupabaseProjectVersionRepository(supabaseClient)
+  : createProjectVersionRepository({
+      projectsRootDir: projectsDataRoot,
+    });
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -80,7 +109,7 @@ app.use(express.static('public'));
 
 // Configuração multer para uploads temporários
 const upload = multer({
-  dest: 'tmp/',
+  dest: tmpPath,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB
   },
@@ -99,6 +128,7 @@ const contentPath = path.join(__dirname, 'content', 'content.json');
 const mediaImgPath = path.join(__dirname, 'public', 'media', 'img');
 const mediaVidPath = path.join(__dirname, 'public', 'media', 'vid');
 const mediaProjectsPath = path.join(__dirname, 'public', 'media', 'projects');
+const artifactsClientsPath = path.join(__dirname, 'artifacts', 'clients');
 
 function parseProjectIdOrThrow(projectIdRaw: string): ProjectId {
   try {
@@ -183,6 +213,42 @@ function getProjectMediaUrl(projectId: ProjectId, mediaKind: 'img' | 'vid', file
   return `/media/projects/${projectId}/${mediaKind}/${filename}`;
 }
 
+async function uploadProjectMediaToSupabase(params: {
+  projectId: ProjectId;
+  mediaKind: 'img' | 'vid';
+  filename: string;
+  body: Buffer;
+  contentType: string;
+}): Promise<string> {
+  if (!supabaseClient || !supabaseStorageBucket) {
+    throw new Error('Supabase Storage não configurado');
+  }
+
+  const storagePath = `projects/${params.projectId}/${params.mediaKind}/${params.filename}`;
+  const { error } = await supabaseClient.storage
+    .from(supabaseStorageBucket)
+    .upload(storagePath, params.body, {
+      upsert: false,
+      contentType: params.contentType,
+      cacheControl: '3600',
+    });
+  if (error) {
+    throw error;
+  }
+
+  const { data } = supabaseClient.storage
+    .from(supabaseStorageBucket)
+    .getPublicUrl(storagePath);
+  return data.publicUrl;
+}
+
+async function cleanupProjectArtifacts(projectId: ProjectId): Promise<void> {
+  await Promise.all([
+    fs.rm(path.join(mediaProjectsPath, projectId), { recursive: true, force: true }),
+    fs.rm(path.join(artifactsClientsPath, projectId), { recursive: true, force: true }),
+  ]);
+}
+
 function sendClientExportError(res: Response, error: unknown) {
   if (error instanceof ClientExportError) {
     res.status(error.statusCode).json({
@@ -201,7 +267,7 @@ async function ensureDirectories() {
   await fs.mkdir(mediaVidPath, { recursive: true });
   await fs.mkdir(mediaProjectsPath, { recursive: true });
   await fs.mkdir(projectsDataRoot, { recursive: true });
-  await fs.mkdir(path.join(__dirname, 'tmp'), { recursive: true });
+  await fs.mkdir(tmpPath, { recursive: true });
 }
 
 ensureDirectories();
@@ -272,6 +338,24 @@ app.put('/api/projects/:projectId', async (req, res) => {
     }
     console.error('Erro ao atualizar projeto:', error);
     res.status(500).json({ error: 'Erro ao atualizar projeto' });
+  }
+});
+
+// DELETE /api/projects/:projectId — remove projeto e dados relacionados
+app.delete('/api/projects/:projectId', async (req, res) => {
+  try {
+    const removedProject = await deleteProject(projectMetadataRepository, req.params.projectId);
+    await cleanupProjectArtifacts(removedProject.projectId);
+    res.json(removedProject);
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    console.error('Erro ao deletar projeto:', error);
+    res.status(500).json({ error: 'Erro ao deletar projeto' });
   }
 });
 
@@ -674,6 +758,24 @@ app.post('/api/clients/:clientId/publish', async (req, res) => {
   }
 });
 
+// DELETE /api/clients/:clientId — alias em linguagem de cliente
+app.delete('/api/clients/:clientId', async (req, res) => {
+  try {
+    const removedProject = await deleteProject(projectMetadataRepository, req.params.clientId);
+    await cleanupProjectArtifacts(removedProject.projectId);
+    res.json(removedProject);
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    console.error('Erro ao deletar cliente:', error);
+    res.status(500).json({ error: 'Erro ao deletar cliente' });
+  }
+});
+
 // POST /api/clients/:clientId/export-zip — gera build estático e compacta ZIP do cliente
 app.post('/api/clients/:clientId/export-zip', async (req, res) => {
   try {
@@ -903,23 +1005,41 @@ app.post('/api/projects/:projectId/upload-image', upload.single('image'), async 
 
   try {
     const projectId = parseProjectIdOrThrow(req.params.projectId);
-    const projectMediaImgPath = getProjectMediaDirectory(projectId, 'img');
-    await fs.mkdir(projectMediaImgPath, { recursive: true });
-
     const filename = `${Date.now()}-${Math.random().toString(36).substring(7)}.webp`;
-    const outputPath = path.join(projectMediaImgPath, filename);
-
-    await sharp(req.file.path)
+    const optimizedBuffer = await sharp(req.file.path)
       .webp({ quality: 75 })
       .resize(1920, null, { withoutEnlargement: true })
-      .toFile(outputPath);
+      .toBuffer();
 
     await fs.unlink(req.file.path);
 
+    if (hasSupabasePersistence) {
+      const uploadedUrl = await uploadProjectMediaToSupabase({
+        projectId,
+        mediaKind: 'img',
+        filename,
+        body: optimizedBuffer,
+        contentType: 'image/webp',
+      });
+      return res.json({
+        projectId,
+        url: uploadedUrl,
+        filename,
+      });
+    }
+
+    const projectMediaImgPath = getProjectMediaDirectory(projectId, 'img');
+    await fs.mkdir(projectMediaImgPath, { recursive: true });
+    const outputPath = path.join(projectMediaImgPath, filename);
+    await fs.writeFile(outputPath, optimizedBuffer);
+
     const sizes = [768, 1280];
     for (const size of sizes) {
-      const variantPath = path.join(projectMediaImgPath, `${filename.replace('.webp', '')}-${size}.webp`);
-      await sharp(outputPath)
+      const variantPath = path.join(
+        projectMediaImgPath,
+        `${filename.replace('.webp', '')}-${size}.webp`,
+      );
+      await sharp(optimizedBuffer)
         .resize(size, null, { withoutEnlargement: true })
         .webp({ quality: 75 })
         .toFile(variantPath);
@@ -955,18 +1075,33 @@ app.post('/api/projects/:projectId/upload-video', upload.single('video'), async 
 
   try {
     const projectId = parseProjectIdOrThrow(req.params.projectId);
-    const projectMediaVidPath = getProjectMediaDirectory(projectId, 'vid');
-    await fs.mkdir(projectMediaVidPath, { recursive: true });
-
     const filename = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const ext = path.extname(req.file.originalname);
     const savedFilename = `${filename}${ext}`;
-    const outputPath = path.join(projectMediaVidPath, savedFilename);
-
-    await fs.copyFile(req.file.path, outputPath);
+    const fileBuffer = await fs.readFile(req.file.path);
     await fs.unlink(req.file.path);
-
     const posterFilename = `${filename}-poster.webp`;
+
+    if (hasSupabasePersistence) {
+      const uploadedUrl = await uploadProjectMediaToSupabase({
+        projectId,
+        mediaKind: 'vid',
+        filename: savedFilename,
+        body: fileBuffer,
+        contentType: req.file.mimetype || 'application/octet-stream',
+      });
+      return res.json({
+        projectId,
+        url: uploadedUrl,
+        filename: savedFilename,
+        poster: '',
+      });
+    }
+
+    const projectMediaVidPath = getProjectMediaDirectory(projectId, 'vid');
+    await fs.mkdir(projectMediaVidPath, { recursive: true });
+    const outputPath = path.join(projectMediaVidPath, savedFilename);
+    await fs.writeFile(outputPath, fileBuffer);
 
     res.json({
       projectId,

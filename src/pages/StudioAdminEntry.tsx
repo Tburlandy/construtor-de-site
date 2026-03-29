@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Loader2, PencilLine, Plus, Settings } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Loader2, PencilLine, Plus, Settings, Trash2 } from 'lucide-react';
 import type { Content } from '@/content/schema';
 import type { ProjectMetadata } from '@/platform/contracts';
 import { useToast } from '@/hooks/use-toast';
@@ -270,6 +270,7 @@ export default function StudioAdminEntry() {
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
+  const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
@@ -671,6 +672,50 @@ export default function StudioAdminEntry() {
     }
   };
 
+  const handleDeleteProject = async (project: ProjectMetadata) => {
+    if (deletingProjectId) {
+      return;
+    }
+
+    const confirmation = window.confirm(
+      `Tem certeza que deseja deletar o cliente "${project.name}"? Esta ação não pode ser desfeita.`,
+    );
+    if (!confirmation) {
+      return;
+    }
+
+    setDeletingProjectId(project.projectId);
+    try {
+      const response = await fetch(`/api/projects/${encodeURIComponent(project.projectId)}`, {
+        method: 'DELETE',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getErrorMessage(payload, 'Não foi possível deletar o cliente.'));
+      }
+
+      setProjects((current) => current.filter((item) => item.projectId !== project.projectId));
+      setPublishStatus((current) => {
+        const next = { ...current };
+        delete next[project.projectId];
+        return next;
+      });
+      toast({
+        title: 'Cliente deletado',
+        description: project.name,
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro ao deletar',
+        description:
+          error instanceof Error && error.message ? error.message : 'Falha de rede ao deletar cliente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingProjectId((current) => (current === project.projectId ? null : current));
+    }
+  };
+
   const isBusy = loadingConfig || savingConfig || testingConnection;
 
   return (
@@ -773,6 +818,22 @@ export default function StudioAdminEntry() {
                           title="Editar cliente"
                         >
                           <PencilLine className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-[8px] border border-[rgba(248,113,113,0.45)] bg-[rgba(2,6,23,0.7)] p-1.5 text-[rgba(248,113,113,0.95)] transition hover:bg-[rgba(127,29,29,0.35)] hover:text-[rgba(252,165,165,1)] disabled:cursor-not-allowed disabled:opacity-70"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleDeleteProject(item);
+                          }}
+                          title="Deletar cliente"
+                          disabled={deletingProjectId === item.projectId}
+                        >
+                          {deletingProjectId === item.projectId ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
                         </button>
                       </div>
                     </div>

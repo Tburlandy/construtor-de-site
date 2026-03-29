@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, LayoutTemplate, Palette, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { Benefit, Content, ImageLayout, Project } from '@/content/schema';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { normalizeCoverImageLayout, normalizeLogoImageLayout } from '@/lib/imageLayout';
+import { normalizeCoverImageLayout } from '@/lib/imageLayout';
 import { cn } from '@/lib/utils';
 import { BUILDER_SECTIONS, type BuilderSectionId, type BuilderTabId } from './builderSections';
 import {
@@ -253,16 +253,6 @@ export function BuilderEditorPanel({
     };
   }, [activeTab, openSectionId, scrollToTopSignal]);
 
-  const setGlobalField = <K extends keyof Content['global']>(field: K, value: Content['global'][K]) => {
-    onContentChange((current) => ({
-      ...current,
-      global: {
-        ...current.global,
-        [field]: value,
-      },
-    }));
-  };
-
   const setSeoField = <K extends keyof Content['seo']>(field: K, value: Content['seo'][K]) => {
     onContentChange((current) => ({
       ...current,
@@ -338,7 +328,6 @@ export function BuilderEditorPanel({
     });
   };
 
-  const logoLayoutControlValue = normalizeLogoImageLayout(content.imageLayout?.logo);
   const heroImageLayoutControlValue = normalizeCoverImageLayout(content.imageLayout?.heroBackground);
   const howItWorksImageLayoutControlValue = normalizeCoverImageLayout(content.imageLayout?.howItWorks);
   const proofBarImageLayoutControlValue = normalizeCoverImageLayout(content.imageLayout?.proofBar);
@@ -355,14 +344,6 @@ export function BuilderEditorPanel({
     value: BuilderImageLayoutValue,
   ) => {
     setImageLayoutField(field, {
-      scale: value.scale,
-      x: value.x,
-      y: value.y,
-    });
-  };
-
-  const updateLogoLayout = (value: BuilderImageLayoutValue) => {
-    setImageLayoutField('logo', {
       scale: value.scale,
       x: value.x,
       y: value.y,
@@ -445,65 +426,6 @@ export function BuilderEditorPanel({
     if (sectionId === 'global') {
       return (
         <div className="grid gap-4">
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Nome da marca</p>
-            <input
-              className={builderInputClassName}
-              value={content.global.brand}
-              onChange={(event) => setGlobalField('brand', event.target.value)}
-              placeholder="Ex.: EFITEC SOLAR"
-            />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Cidade</p>
-            <input
-              className={builderInputClassName}
-              value={content.global.city}
-              onChange={(event) => setGlobalField('city', event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>WhatsApp (E.164)</p>
-            <input
-              className={builderInputClassName}
-              value={content.global.whatsappE164}
-              onChange={(event) => setGlobalField('whatsappE164', event.target.value)}
-              placeholder="5521999999999"
-            />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>URL do site</p>
-            <input
-              className={builderInputClassName}
-              value={content.global.siteUrl}
-              onChange={(event) => setGlobalField('siteUrl', event.target.value)}
-              placeholder="https://www.exemplo.com"
-            />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>CNPJ</p>
-            <input
-              className={builderInputClassName}
-              value={content.global.cnpj}
-              onChange={(event) => setGlobalField('cnpj', event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Endereço</p>
-            <textarea
-              className={builderTextAreaClassName}
-              rows={3}
-              value={content.global.address}
-              onChange={(event) => setGlobalField('address', event.target.value)}
-            />
-          </div>
-          <BuilderImageField
-            label="Logo"
-            description="Logo exibida no cabeçalho do site."
-            value={content.global.logo ?? ''}
-            onChange={(nextValue) => setGlobalField('logo', nextValue)}
-            onUploadImage={onUploadImage}
-          />
           <div className="space-y-3">
             <p className={builderLabelClassName}>Menu do cabeçalho</p>
             {(content.header?.menu?.length ? content.header.menu : DEFAULT_HEADER_MENU_ITEMS).map((item, index) => (
@@ -541,9 +463,6 @@ export function BuilderEditorPanel({
                 />
               </div>
             ))}
-            <p className={builderHintClassName}>
-              IDs esperados na página: forma-pagamento, cuidamos-tudo, sobre-nos, casos, como-funciona.
-            </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-2">
@@ -571,12 +490,6 @@ export function BuilderEditorPanel({
               />
             </div>
           </div>
-          <BuilderImageLayoutControls
-            mode="logo"
-            value={logoLayoutControlValue}
-            onChange={updateLogoLayout}
-            onReset={() => setImageLayoutField('logo', undefined)}
-          />
         </div>
       );
     }
@@ -628,11 +541,7 @@ export function BuilderEditorPanel({
               }}
               onBlur={commitJsonLd}
             />
-            {jsonLdError ? (
-              <p className="text-xs text-[var(--builder-danger)]">{jsonLdError}</p>
-            ) : (
-              <p className={builderHintClassName}>O JSON é aplicado ao sair do campo.</p>
-            )}
+            {jsonLdError ? <p className="text-xs text-[var(--builder-danger)]">{jsonLdError}</p> : null}
           </div>
         </div>
       );

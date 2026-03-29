@@ -109,7 +109,7 @@ export function BuilderImageLayoutControls({
   const scaleHint =
     mode === 'logo'
       ? 'Controla o tamanho visual da logo.'
-      : 'Controla o zoom sem trocar o arquivo original.';
+      : 'Abaixo de 1 afasta (menos corte); acima de 1 aproxima o enquadramento.';
 
   return (
     <div

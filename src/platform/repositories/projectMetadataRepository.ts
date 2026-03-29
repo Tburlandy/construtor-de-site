@@ -6,7 +6,7 @@ import {
   ProjectSchema,
   type ProjectId,
   type ProjectMetadata,
-} from '../contracts';
+} from '../contracts/index.js';
 
 /** Arquivo de metadados por projeto — ADR: `data/projects/<project-id>/metadata.json`. */
 const METADATA_FILENAME = 'metadata.json';
@@ -22,6 +22,7 @@ export interface ProjectMetadataRepository {
   list(): Promise<ProjectMetadata[]>;
   getByProjectId(projectId: ProjectId): Promise<ProjectMetadata | null>;
   save(metadata: ProjectMetadata): Promise<ProjectMetadata>;
+  deleteByProjectId(projectId: ProjectId): Promise<void>;
 }
 
 export type CreateProjectMetadataRepositoryParams = {
@@ -102,10 +103,17 @@ export function createProjectMetadataRepository(
     return validatedMetadata;
   };
 
+  const deleteByProjectId = async (projectId: ProjectId): Promise<void> => {
+    const parsedProjectId = parseProjectId(projectId);
+    const projectDirectoryPath = getProjectDirectoryPath(parsedProjectId);
+    await fs.rm(projectDirectoryPath, { recursive: true, force: true });
+  };
+
   return {
     list,
     getByProjectId,
     save,
+    deleteByProjectId,
   };
 }
 
