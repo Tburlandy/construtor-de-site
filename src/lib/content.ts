@@ -5,6 +5,7 @@ import contentJson from '@/../content/content.json';
 
 let cachedContent: Content | null = null;
 const cachedProjectContent = new Map<string, Content>();
+let runtimeContentOverride: Content | null = null;
 
 // Substitui variáveis {{var}} pelos valores do env ou do conteúdo
 function prefixBasePath(text: string): string {
@@ -62,8 +63,25 @@ function normalizeProjectId(projectId?: string | null): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function getRuntimeContentOverride(): Content | null {
+  return runtimeContentOverride;
+}
+
+export function setContentRuntimeOverride(content: Content | null) {
+  if (!content) {
+    runtimeContentOverride = null;
+    return;
+  }
+  runtimeContentOverride = processContent(content, content) as Content;
+}
+
 // Retorna conteúdo processado (importado diretamente no build, sem fetch)
 export async function fetchContent(): Promise<Content> {
+  const override = getRuntimeContentOverride();
+  if (override) {
+    return override;
+  }
+
   // Se já temos cache, retorna
   if (cachedContent) {
     return cachedContent;
@@ -77,6 +95,11 @@ export async function fetchContent(): Promise<Content> {
 
 // Retorna conteúdo no escopo de projeto com fallback para o conteúdo legado.
 export async function fetchProjectContent(projectId: string): Promise<Content> {
+  const override = getRuntimeContentOverride();
+  if (override) {
+    return override;
+  }
+
   const normalizedProjectId = normalizeProjectId(projectId);
   if (!normalizedProjectId) {
     return fetchContent();
@@ -108,6 +131,11 @@ export async function fetchProjectContent(projectId: string): Promise<Content> {
 
 // Versão síncrona para uso imediato (sem loading)
 export function getContentSync(): Content {
+  const override = getRuntimeContentOverride();
+  if (override) {
+    return override;
+  }
+
   if (cachedContent) {
     return cachedContent;
   }

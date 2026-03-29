@@ -54,6 +54,12 @@ Objetivo:
 Objetivo:
 - estudar com rigor a viabilidade e os limites.
 
+### F8 — Builder visual multi-projeto
+Objetivo:
+- consolidar a UX de construtor visual com topo, lateral e preview;
+- permitir troca/criação/duplicação de projeto sem sair do builder;
+- migrar a edição para painéis contextuais por seção.
+
 ## Dependências entre fases
 
 - F0 desbloqueia F1
@@ -63,6 +69,7 @@ Objetivo:
 - F4 desbloqueia F5
 - F5 desbloqueia F6
 - F6 precede F7
+- F3 e F6 desbloqueiam F8 (UX de builder sobre base multi-projeto)
 
 Regra de execução:
 - F1-F5 devem seguir a ADR de `docs/context/04-mvp-persistence-and-artifact-layout-adr.md`, salvo card explícito de revisão dessa ADR.

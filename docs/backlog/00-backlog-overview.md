@@ -54,6 +54,14 @@ Saída:
 - parecer técnico baseado em evidência;
 - recomendação explícita.
 
+### F8 — Builder visual multi-projeto
+Saída:
+- shell visual de construtor com topo, lateral e preview;
+- troca de projeto no topo sem sair do builder;
+- edição contextual por seção;
+- criação/duplicação de projeto no contexto do builder;
+- sincronização básica seção ativa x preview.
+
 ## Regra do backlog
 
 Cada item do backlog deve ser implementado por card atômico.

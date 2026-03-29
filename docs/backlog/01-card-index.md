@@ -39,6 +39,15 @@
 ### F7
 21. `F7-001-embedded-admin-feasibility-study.md`
 
+### F8
+22. `F8-001-create-builder-workspace-shell.md`
+23. `F8-002-add-topbar-project-switcher-and-context-actions.md`
+24. `F8-003-add-builder-sections-sidebar-navigation.md`
+25. `F8-004-implement-contextual-section-editor-panels.md`
+26. `F8-005-render-live-project-preview-pane.md`
+27. `F8-006-create-and-duplicate-project-within-builder.md`
+28. `F8-007-sync-preview-section-focus-with-sidebar.md`
+
 ## Dependências resumidas
 
 - `F0-001` não depende de card anterior
@@ -69,6 +78,14 @@
 - `F6-002` depende de `F1-002`, `F1-003`, `F2-001` e `F2-002`
 
 - `F7-001` depende de `F6-001`
+
+- `F8-001` depende de `F2-003`
+- `F8-002` depende de `F8-001`, `F2-002` e `F2-003`
+- `F8-003` depende de `F8-001` e `F8-002`
+- `F8-004` depende de `F8-003` e `F3-002`
+- `F8-005` depende de `F8-001`, `F8-004` e `F3-001`
+- `F8-006` depende de `F8-002`, `F6-002` e `F2-001`
+- `F8-007` depende de `F8-003` e `F8-005`
 
 ## Referência estrutural de F0
 

@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import Studio from "./pages/Studio";
 import StudioProjectList from "./pages/StudioProjectList";
 import StudioProjectShell from "./pages/StudioProjectShell";
+import StudioProjectPreview from "./pages/StudioProjectPreview";
 import SdrForm from "./pages/SdrForm";
 import Teste from "./pages/Teste";
 
@@ -32,6 +33,7 @@ const App = () => (
             <Route path="/energia-solar-em/:slug" element={<CityPage />} />
             <Route path="/cadastro-sdr" element={<SdrForm />} />
             <Route path="/teste" element={<Teste />} />
+            <Route path="/dev/studio/preview/:projectId" element={<StudioProjectPreview />} />
             <Route path="/dev/studio/projects/:projectId" element={<StudioProjectShell />} />
             <Route path="/dev/studio/projects" element={<StudioProjectList />} />
             <Route path="/dev/studio" element={<Studio />} />
