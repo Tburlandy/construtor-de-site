@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import type { Content } from '@/content/schema';
-import type { ProjectMetadata } from '@/platform/contracts';
+import type { ProjectListItemWithContentLogo, ProjectMetadata } from '@/platform/contracts';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -170,7 +170,7 @@ export default function StudioProjectShell() {
   );
 
   const [project, setProject] = useState<ProjectMetadata | null>(null);
-  const [projects, setProjects] = useState<ProjectMetadata[]>([]);
+  const [projects, setProjects] = useState<ProjectListItemWithContentLogo[]>([]);
   const [content, setContent] = useState<Content | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -219,7 +219,7 @@ export default function StudioProjectShell() {
         throw new Error('fetch failed');
       }
 
-      const data = (await response.json()) as ProjectMetadata[];
+      const data = (await response.json()) as ProjectListItemWithContentLogo[];
       setProjects(data);
     } catch {
       setProjects([]);
@@ -1013,6 +1013,7 @@ export default function StudioProjectShell() {
       <BuilderTopbar
         project={project}
         projects={projects}
+        contentGlobalLogo={content.global.logo}
         currentProjectId={project.projectId}
         loadingProjects={loadingProjects}
         saving={saving}
@@ -1034,6 +1035,7 @@ export default function StudioProjectShell() {
             sections={BUILDER_SECTIONS}
             activeSectionId={activeSectionId}
             activeModuleId={activeModuleId}
+            content={content}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
             onSectionChange={handleSidebarSectionChange}

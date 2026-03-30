@@ -73,6 +73,20 @@ const ImageLayoutSchema = z.object({
   fullService: CoverImageLayoutSchema.optional(),
 });
 
+/** Blocos da landing que podem ser ocultados no site (presença na lista = oculto). */
+export const HIDDEN_PAGE_SECTION_IDS = [
+  'hero',
+  'financing',
+  'fullService',
+  'proofBar',
+  'showcase',
+  'howItWorks',
+] as const;
+
+export type HiddenPageSectionId = (typeof HIDDEN_PAGE_SECTION_IDS)[number];
+
+export const HiddenPageSectionIdSchema = z.enum(HIDDEN_PAGE_SECTION_IDS);
+
 // Schema para especialista
 const ExpertSchema = z.object({
   photo: z.string(),
@@ -179,6 +193,7 @@ export const ContentSchema = z.object({
     imageAlt: z.string().optional(),
   }).optional(),
   imageLayout: ImageLayoutSchema.optional(),
+  hiddenPageSections: z.array(HiddenPageSectionIdSchema).optional(),
 });
 
 export type Content = z.infer<typeof ContentSchema>;

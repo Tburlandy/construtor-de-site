@@ -14,6 +14,7 @@ import { Footer } from '@/components/Footer';
 import { PopupLeadForm } from '@/components/PopupLeadForm';
 import { persistUtm } from '@/lib/tracking';
 import { getContentSync } from '@/lib/content';
+import { isPageSectionVisible } from '@/lib/sectionVisibility';
 import { SEO } from '@/seo/SEO';
 
 const Index = () => {
@@ -142,12 +143,14 @@ const Index = () => {
       <SEO content={content} />
 
       <Header onOpenPopup={handleOpenPopup} content={content} />
-      <Hero onOpenPopup={handleOpenPopup} content={content} />
-      <Financing onOpenPopup={handleOpenPopup} />
-      <FullService onOpenPopup={handleOpenPopup} />
-      <ProofBar onOpenPopup={handleOpenPopup} />
-      <Cases />
-      <HowItWorks />
+      {isPageSectionVisible(content, 'hero') ? (
+        <Hero onOpenPopup={handleOpenPopup} content={content} />
+      ) : null}
+      {isPageSectionVisible(content, 'financing') ? <Financing onOpenPopup={handleOpenPopup} /> : null}
+      {isPageSectionVisible(content, 'fullService') ? <FullService onOpenPopup={handleOpenPopup} /> : null}
+      {isPageSectionVisible(content, 'proofBar') ? <ProofBar onOpenPopup={handleOpenPopup} /> : null}
+      {isPageSectionVisible(content, 'showcase') ? <Cases /> : null}
+      {isPageSectionVisible(content, 'howItWorks') ? <HowItWorks /> : null}
       <Calculator onOpenPopup={handleOpenPopup} />
       <FAQ />
       <ContactBlock onOpenPopup={handleOpenPopup} />

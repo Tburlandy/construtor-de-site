@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronsUpDown, Copy, Plus, Save, UploadCloud, WandSparkles } from 'lucide-react';
-import type { ProjectMetadata } from '@/platform/contracts';
+import type { ProjectListItemWithContentLogo, ProjectMetadata } from '@/platform/contracts';
+import {
+  FALLBACK_STUDIO_PROJECT_LOGO_URL,
+  resolveStudioProjectLogoSrc,
+} from '@/lib/studioProjectLogo';
 import { cn } from '@/lib/utils';
 import {
   Command,
@@ -21,7 +25,9 @@ import {
 
 interface BuilderTopbarProps {
   project: ProjectMetadata | null;
-  projects: ProjectMetadata[];
+  projects: ProjectListItemWithContentLogo[];
+  /** Logo do site (`content.global.logo`), alinhada ao preview e à listagem de clientes. */
+  contentGlobalLogo?: string | null;
   currentProjectId: string;
   loadingProjects: boolean;
   saving: boolean;
@@ -35,12 +41,6 @@ interface BuilderTopbarProps {
   onOpenPublish: () => void;
   onOpenCreateProject: () => void;
   onOpenDuplicateProject: () => void;
-}
-
-const FALLBACK_PROJECT_LOGO_URL = 'https://www.efitecsolar.com/assets/images/logo.png';
-
-function buildProjectLogoUrl(projectId: string): string {
-  return `/media/projects/${encodeURIComponent(projectId)}/img/logo.webp`;
 }
 
 function formatSavedAt(isoDate: string | null): string {
@@ -75,6 +75,7 @@ function formatProjectStatusLabel(status: ProjectMetadata['status']): string {
 export function BuilderTopbar({
   project,
   projects,
+  contentGlobalLogo,
   currentProjectId,
   loadingProjects,
   saving,
@@ -97,15 +98,20 @@ export function BuilderTopbar({
   const hasCurrentOption = projects.some((entry) => entry.projectId === currentProjectId);
   const projectOptions = hasCurrentOption || !project ? projects : [project, ...projects];
   const [clientSwitchOpen, setClientSwitchOpen] = useState(false);
-  const [projectLogoSrc, setProjectLogoSrc] = useState(FALLBACK_PROJECT_LOGO_URL);
+  const [projectLogoSrc, setProjectLogoSrc] = useState(FALLBACK_STUDIO_PROJECT_LOGO_URL);
 
   useEffect(() => {
     if (!project?.projectId) {
-      setProjectLogoSrc(FALLBACK_PROJECT_LOGO_URL);
+      setProjectLogoSrc(FALLBACK_STUDIO_PROJECT_LOGO_URL);
       return;
     }
-    setProjectLogoSrc(buildProjectLogoUrl(project.projectId));
-  }, [project?.projectId]);
+    setProjectLogoSrc(
+      resolveStudioProjectLogoSrc({
+        projectId: project.projectId,
+        contentLogoUrl: contentGlobalLogo,
+      }),
+    );
+  }, [project?.projectId, contentGlobalLogo]);
 
   const sortedProjectOptions = useMemo(
     () =>
@@ -143,8 +149,8 @@ export function BuilderTopbar({
                 alt={project?.name ?? 'Cliente'}
                 className="h-full w-full object-contain"
                 onError={() => {
-                  if (projectLogoSrc !== FALLBACK_PROJECT_LOGO_URL) {
-                    setProjectLogoSrc(FALLBACK_PROJECT_LOGO_URL);
+                  if (projectLogoSrc !== FALLBACK_STUDIO_PROJECT_LOGO_URL) {
+                    setProjectLogoSrc(FALLBACK_STUDIO_PROJECT_LOGO_URL);
                   }
                 }}
               />
@@ -193,7 +199,7 @@ export function BuilderTopbar({
                     {sortedProjectOptions.map((entry) => (
                       <CommandItem
                         key={entry.projectId}
-                        value={`${entry.name} ${entry.projectId}`}
+                        value={`${entry.name} ${entry.projectId} ${entry.slug}`}
                         className="mx-1 my-0.5 rounded-[10px] px-2 py-2 data-[selected=true]:bg-[rgba(14,165,233,0.2)] data-[selected=true]:text-[var(--builder-text-primary)]"
                         onSelect={() => {
                           onProjectChange(entry.projectId);
@@ -205,7 +211,7 @@ export function BuilderTopbar({
                             {entry.name}
                           </p>
                           <p className="truncate text-xs text-[var(--builder-text-muted)]">
-                            {entry.projectId}
+                            {entry.slug}
                           </p>
                         </div>
                         <Check

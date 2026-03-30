@@ -3,6 +3,8 @@ import {
   ProjectContentRecordSchema,
   ProjectMetadataSchema,
   ProjectSchema,
+  type ProjectContentRecord,
+  type ProjectListItemWithContentLogo,
   type PublicationRecord,
   type ProjectMetadata,
 } from '../contracts/index.js';
@@ -119,6 +121,37 @@ export async function listProjects(
   return repo.list();
 }
 
+function extractGlobalLogoFromContentRecord(record: ProjectContentRecord | null): string | undefined {
+  if (!record?.content || typeof record.content !== 'object' || record.content === null) {
+    return undefined;
+  }
+  const root = record.content as Record<string, unknown>;
+  const global = root.global;
+  if (typeof global !== 'object' || global === null || Array.isArray(global)) {
+    return undefined;
+  }
+  const logo = (global as Record<string, unknown>).logo;
+  if (typeof logo !== 'string') {
+    return undefined;
+  }
+  const trimmed = logo.trim();
+  return trimmed || undefined;
+}
+
+export async function listProjectsWithContentLogos(
+  metadataRepo: ProjectMetadataRepository,
+  contentRepo: ProjectContentRepository,
+): Promise<ProjectListItemWithContentLogo[]> {
+  const projects = await metadataRepo.list();
+  return Promise.all(
+    projects.map(async (meta) => {
+      const record = await contentRepo.getByProjectId(meta.projectId);
+      const contentLogoUrl = extractGlobalLogoFromContentRecord(record);
+      return contentLogoUrl ? { ...meta, contentLogoUrl } : { ...meta };
+    }),
+  );
+}
+
 export async function getProjectById(
   repo: ProjectMetadataRepository,
   projectId: string,
@@ -183,9 +216,16 @@ export async function updateProjectMetadata(
   }
 
   const now = new Date().toISOString();
+  const trimmedName = parsedBody.name.trim();
+  const allProjects = await repo.list();
+  const slugCandidates = new Set(allProjects.map((item) => item.slug));
+  slugCandidates.delete(current.slug);
+  const nextSlug = ensureUniqueIdentifier(trimmedName, slugCandidates);
+
   const updated = ProjectMetadataSchema.parse({
     ...current,
-    name: parsedBody.name.trim(),
+    name: trimmedName,
+    slug: nextSlug,
     updatedAt: now,
   });
 

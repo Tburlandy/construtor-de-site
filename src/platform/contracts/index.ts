@@ -105,6 +105,10 @@ export const ProjectRecordSchema = z.object({
 });
 
 export type ProjectMetadata = z.infer<typeof ProjectMetadataSchema>;
+/** Item de lista do Studio com URL de logo lida de `content.global.logo` (só API, não persistida). */
+export type ProjectListItemWithContentLogo = ProjectMetadata & {
+  contentLogoUrl?: string;
+};
 export type Project = z.infer<typeof ProjectSchema>;
 /** Entidade base de projeto na plataforma (identidade estável). */
 export type PlatformProject = Project;

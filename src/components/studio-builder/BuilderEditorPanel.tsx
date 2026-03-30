@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, LayoutTemplate, Palette, Pencil, Plus, Trash2, X } from 'lucide-react';
-import type { Benefit, Content, ImageLayout, Project } from '@/content/schema';
+import type { Benefit, Content, HiddenPageSectionId, ImageLayout, Project } from '@/content/schema';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Switch } from '@/components/ui/switch';
+import { isPageSectionVisible } from '@/lib/sectionVisibility';
 import { normalizeCoverImageLayout } from '@/lib/imageLayout';
 import { cn } from '@/lib/utils';
 import { BUILDER_SECTIONS, type BuilderSectionId, type BuilderTabId } from './builderSections';
@@ -422,6 +424,41 @@ export function BuilderEditorPanel({
     }
   };
 
+  const setPageSectionHidden = (sectionId: HiddenPageSectionId, hidden: boolean) => {
+    onContentChange((current) => {
+      const prev = current.hiddenPageSections ?? [];
+      const next = hidden
+        ? prev.includes(sectionId)
+          ? prev
+          : [...prev, sectionId]
+        : prev.filter((id) => id !== sectionId);
+      return {
+        ...current,
+        hiddenPageSections: next.length ? next : undefined,
+      };
+    });
+  };
+
+  const renderPageSectionVisibilityRow = (sectionId: HiddenPageSectionId) => {
+    const visible = isPageSectionVisible(content, sectionId);
+    return (
+      <div className="flex items-start justify-between gap-3 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] px-3 py-2.5">
+        <div className="min-w-0 space-y-0.5">
+          <p className={builderLabelClassName}>Exibir no site</p>
+          <p className="text-[11px] leading-snug text-[var(--builder-text-secondary)]">
+            Desligue para ocultar este bloco na página pública. O conteúdo continua salvo.
+          </p>
+        </div>
+        <Switch
+          className="mt-0.5 shrink-0 data-[state=unchecked]:bg-[var(--builder-border)]"
+          checked={visible}
+          onCheckedChange={(checked) => setPageSectionHidden(sectionId, !checked)}
+          aria-label={visible ? 'Seção visível no site' : 'Seção oculta no site'}
+        />
+      </div>
+    );
+  };
+
   const renderSectionEditor = (sectionId: BuilderSectionId) => {
     if (sectionId === 'global') {
       return (
@@ -551,6 +588,7 @@ export function BuilderEditorPanel({
       const heroStats = content.hero.stats?.length ? content.hero.stats : DEFAULT_HERO_STATS;
       return (
         <div className="grid gap-4">
+          {renderPageSectionVisibilityRow('hero')}
           <div className="space-y-2">
             <p className={builderLabelClassName}>Headline</p>
             <input
@@ -652,6 +690,7 @@ export function BuilderEditorPanel({
       const financingItems = content.financing?.items?.length ? content.financing.items : DEFAULT_FINANCING_ITEMS;
       return (
         <div className="grid gap-4">
+          {renderPageSectionVisibilityRow('financing')}
           <div className="space-y-2">
             <p className={builderLabelClassName}>Selo</p>
             <input
@@ -797,6 +836,7 @@ export function BuilderEditorPanel({
       const cards = content.proofBar?.cards?.length ? content.proofBar.cards : DEFAULT_PROOFBAR_CARDS;
       return (
         <div className="grid gap-4">
+          {renderPageSectionVisibilityRow('proofBar')}
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-2">
               <p className={builderLabelClassName}>Título (prefixo)</p>
@@ -968,6 +1008,7 @@ export function BuilderEditorPanel({
           : DEFAULT_FULL_SERVICE_ITEMS;
       return (
         <div className="grid gap-4">
+          {renderPageSectionVisibilityRow('fullService')}
           <div className="space-y-2">
             <p className={builderLabelClassName}>Selo</p>
             <input
@@ -1122,6 +1163,7 @@ export function BuilderEditorPanel({
       const steps = content.howItWorks?.steps?.length ? content.howItWorks.steps : DEFAULT_HOW_IT_WORKS_STEPS;
       return (
         <div className="grid gap-4">
+          {renderPageSectionVisibilityRow('howItWorks')}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
               <p className={builderLabelClassName}>Título (prefixo)</p>
@@ -1261,6 +1303,7 @@ export function BuilderEditorPanel({
     if (sectionId === 'showcase') {
       return (
         <div className="space-y-4">
+          {renderPageSectionVisibilityRow('showcase')}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <p className={builderLabelClassName}>Título (destaque)</p>

@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { trackCTAPopupOpen } from '@/lib/gtm';
 import type { Content } from '@/content/schema';
 import { normalizeLogoImageLayout } from '@/lib/imageLayout';
+import { isDomAnchorSectionVisible } from '@/lib/sectionVisibility';
 
 interface HeaderProps {
   onOpenPopup: () => void;
@@ -14,7 +15,7 @@ export const Header = ({ onOpenPopup, content }: HeaderProps) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const logoLayout = normalizeLogoImageLayout(content?.imageLayout?.logo);
   const logoSrc = content?.global.logo || 'https://www.efitecsolar.com/assets/images/logo.png';
-  const menuItems =
+  const menuItemsRaw =
     content?.header?.menu?.length
       ? content.header.menu
       : [
@@ -24,6 +25,9 @@ export const Header = ({ onOpenPopup, content }: HeaderProps) => {
           { sectionId: 'casos', label: 'Projetos' },
           { sectionId: 'como-funciona', label: 'Como funciona' },
         ];
+  const menuItems = content
+    ? menuItemsRaw.filter((item) => isDomAnchorSectionVisible(content, item.sectionId))
+    : menuItemsRaw;
   const desktopCtaLabel = content?.header?.desktopCtaLabel || 'Fale no Whatsapp';
   const mobileCtaLabel = content?.header?.mobileCtaLabel || 'Fale no Whatsapp';
   const mobileCompactCtaLabel = content?.header?.mobileCompactCtaLabel || 'WhatsApp';

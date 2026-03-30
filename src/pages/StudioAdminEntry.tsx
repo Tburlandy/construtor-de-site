@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, ArrowRight, Loader2, PencilLine, Plus, Settings, Trash2 } from 'lucide-react';
 import type { Content } from '@/content/schema';
-import type { ProjectMetadata } from '@/platform/contracts';
+import type { ProjectListItemWithContentLogo, ProjectMetadata } from '@/platform/contracts';
+import {
+  FALLBACK_STUDIO_PROJECT_LOGO_URL,
+  resolveStudioProjectLogoSrc,
+} from '@/lib/studioProjectLogo';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -30,18 +34,22 @@ function normalizeSlug(value: string): string {
   return normalized || 'cliente';
 }
 
-const FALLBACK_PROJECT_LOGO_URL = 'https://www.efitecsolar.com/assets/images/logo.png';
-
-function buildProjectLogoUrl(projectId: string): string {
-  return `/media/projects/${encodeURIComponent(projectId)}/img/logo.webp`;
-}
-
-function ProjectLogo({ projectId, name }: { projectId: string; name: string }) {
-  const [src, setSrc] = useState(() => buildProjectLogoUrl(projectId));
+function ProjectLogo({
+  projectId,
+  name,
+  contentLogoUrl,
+}: {
+  projectId: string;
+  name: string;
+  contentLogoUrl?: string;
+}) {
+  const [src, setSrc] = useState(() =>
+    resolveStudioProjectLogoSrc({ projectId, contentLogoUrl }),
+  );
 
   useEffect(() => {
-    setSrc(buildProjectLogoUrl(projectId));
-  }, [projectId]);
+    setSrc(resolveStudioProjectLogoSrc({ projectId, contentLogoUrl }));
+  }, [projectId, contentLogoUrl]);
 
   return (
     <div className="inline-flex h-10 w-32 shrink-0 items-center justify-center overflow-hidden rounded-[6px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.65)]">
@@ -50,8 +58,8 @@ function ProjectLogo({ projectId, name }: { projectId: string; name: string }) {
         alt={name}
         className="h-full w-full object-contain"
         onError={() => {
-          if (src !== FALLBACK_PROJECT_LOGO_URL) {
-            setSrc(FALLBACK_PROJECT_LOGO_URL);
+          if (src !== FALLBACK_STUDIO_PROJECT_LOGO_URL) {
+            setSrc(FALLBACK_STUDIO_PROJECT_LOGO_URL);
           }
         }}
       />
@@ -245,7 +253,7 @@ function PublishStatusDot({ configured }: { configured: boolean | null }) {
 export default function StudioAdminEntry() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [projects, setProjects] = useState<ProjectMetadata[]>([]);
+  const [projects, setProjects] = useState<ProjectListItemWithContentLogo[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -280,7 +288,7 @@ export default function StudioAdminEntry() {
       if (!response.ok) {
         throw new Error('Não foi possível carregar os clientes.');
       }
-      const data = (await response.json()) as ProjectMetadata[];
+      const data = (await response.json()) as ProjectListItemWithContentLogo[];
       setProjects(data);
       return data;
     } catch (error) {
@@ -299,7 +307,7 @@ export default function StudioAdminEntry() {
     }
   }, []);
 
-  const fetchPublishStatuses = useCallback(async (projectList: ProjectMetadata[]) => {
+  const fetchPublishStatuses = useCallback(async (projectList: ProjectListItemWithContentLogo[]) => {
     if (projectList.length === 0) return;
 
     // mark all as loading
@@ -407,7 +415,7 @@ export default function StudioAdminEntry() {
     }
   };
 
-  const openEditDialog = async (project: ProjectMetadata) => {
+  const openEditDialog = async (project: ProjectListItemWithContentLogo) => {
     setEditingProject(project);
     setEditingContent(null);
     setEditForm(createInitialClientConfigForm(project.name));
@@ -522,7 +530,11 @@ export default function StudioAdminEntry() {
 
       const updatedProject = projectPayload as ProjectMetadata;
       setProjects((current) =>
-        current.map((item) => (item.projectId === updatedProject.projectId ? updatedProject : item)),
+        current.map((item) =>
+          item.projectId === updatedProject.projectId
+            ? { ...updatedProject, contentLogoUrl: item.contentLogoUrl }
+            : item,
+        ),
       );
       setEditOpen(false);
       setEditingProject(null);
@@ -838,7 +850,11 @@ export default function StudioAdminEntry() {
                       </div>
                     </div>
                     <div className="mt-2 flex items-center gap-2.5">
-                      <ProjectLogo projectId={item.projectId} name={item.name} />
+                      <ProjectLogo
+                        projectId={item.projectId}
+                        name={item.name}
+                        contentLogoUrl={item.contentLogoUrl}
+                      />
                       <h2 className="text-lg font-semibold text-[var(--builder-text-primary)]">
                         {item.name}
                       </h2>

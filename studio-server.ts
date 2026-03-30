@@ -38,7 +38,7 @@ import {
   duplicateProject,
   getProjectById,
   listProjectPublications,
-  listProjects,
+  listProjectsWithContentLogos,
   updateProjectMetadata,
 } from './src/platform/studio/projectsStudioApi.js';
 import {
@@ -275,7 +275,10 @@ ensureDirectories();
 // GET /api/projects — lista metadados de projetos
 app.get('/api/projects', async (_req, res) => {
   try {
-    const projects = await listProjects(projectMetadataRepository);
+    const projects = await listProjectsWithContentLogos(
+      projectMetadataRepository,
+      projectContentRepository,
+    );
     res.json(projects);
   } catch (error) {
     console.error('Erro ao listar projetos:', error);

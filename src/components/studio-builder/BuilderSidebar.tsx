@@ -19,6 +19,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isBuilderSectionHiddenOnPage } from '@/lib/sectionVisibility';
+import type { Content } from '@/content/schema';
 import type { BuilderSection, BuilderSectionId } from './builderSections';
 
 export type BuilderSidebarModuleId =
@@ -32,6 +34,8 @@ interface BuilderSidebarProps {
   activeSectionId: BuilderSectionId;
   activeModuleId: BuilderSidebarModuleId;
   collapsed: boolean;
+  /** Conteúdo em edição: usado para indicar seções ocultas na página pública. */
+  content?: Content | null;
   onToggleCollapsed: () => void;
   onSectionChange: (sectionId: BuilderSectionId) => void;
   onModuleChange: (moduleId: BuilderSidebarModuleId) => void;
@@ -72,6 +76,7 @@ export function BuilderSidebar({
   activeSectionId,
   activeModuleId,
   collapsed,
+  content = null,
   onToggleCollapsed,
   onSectionChange,
   onModuleChange,
@@ -178,20 +183,30 @@ export function BuilderSidebar({
           {sections.map((section) => {
             const Icon = sectionIcons[section.id];
             const active = section.id === activeSectionId;
+            const hiddenOnPage = content ? isBuilderSectionHiddenOnPage(content, section.id) : false;
             return (
               <button
                 key={section.id}
                 type="button"
                 onClick={() => onSectionChange(section.id)}
+                title={hiddenOnPage ? `${section.title} (oculto no site)` : section.title}
                 className={cn(
                   'group flex w-full items-center rounded-[10px] border px-2 py-1.5 text-[12px] transition',
+                  hiddenOnPage && 'opacity-55',
                   active
                     ? 'border-[rgba(14,165,233,0.35)] bg-[rgba(14,165,233,0.15)] text-[var(--builder-brand-primary)] shadow-[0_0_20px_rgba(14,165,233,0.15)]'
                     : 'border-transparent text-[var(--builder-text-secondary)] hover:border-[var(--builder-border)] hover:bg-[var(--builder-bg-surface-highlight)] hover:text-[var(--builder-text-primary)]',
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                <span className="ml-2.5 truncate font-semibold">{section.title}</span>
+                <span className="ml-2.5 flex min-w-0 flex-1 items-center gap-1.5 truncate font-semibold">
+                  <span className="truncate">{section.title}</span>
+                  {hiddenOnPage ? (
+                    <span className="shrink-0 rounded bg-[rgba(248,113,113,0.15)] px-1 py-px text-[9px] font-bold uppercase tracking-wide text-[var(--builder-danger-light,#fca5a5)]">
+                      Oculto
+                    </span>
+                  ) : null}
+                </span>
               </button>
             );
           })}
@@ -202,14 +217,16 @@ export function BuilderSidebar({
         <div className="hidden border-t-2 border-[rgba(99,120,160,0.5)] mt-3 mb-2 px-2 pt-3 pb-2 text-xs text-[var(--builder-text-secondary)] lg:flex lg:flex-col lg:items-center lg:gap-1.5">
           {sections.map((section) => {
             const Icon = sectionIcons[section.id];
+            const hiddenOnPage = content ? isBuilderSectionHiddenOnPage(content, section.id) : false;
             return (
               <button
                 key={section.id}
                 type="button"
-                title={section.title}
+                title={hiddenOnPage ? `${section.title} (oculto no site)` : section.title}
                 onClick={() => onSectionChange(section.id)}
                 className={cn(
                   'flex h-8 w-8 items-center justify-center rounded-[10px] border transition',
+                  hiddenOnPage && 'opacity-55',
                   section.id === activeSectionId
                     ? 'border-[rgba(14,165,233,0.35)] bg-[rgba(14,165,233,0.15)] text-[var(--builder-brand-primary)]'
                     : 'border-transparent bg-[rgba(15,23,42,0.5)] hover:border-[var(--builder-border)] hover:text-[var(--builder-text-primary)]',

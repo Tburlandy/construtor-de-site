@@ -29,7 +29,7 @@ import {
   duplicateProject,
   getProjectById,
   listProjectPublications,
-  listProjects,
+  listProjectsWithContentLogos,
   updateProjectMetadata,
 } from './src/platform/studio/projectsStudioApi.js';
 import {
@@ -452,7 +452,10 @@ export function studioPlugin(): Plugin {
 
         try {
           if (req.method === 'GET' && segments.length === 0) {
-            const items = await listProjects(projectMetadataRepository);
+            const items = await listProjectsWithContentLogos(
+              projectMetadataRepository,
+              projectContentRepository,
+            );
             return sendJson(200, items);
           }
 
