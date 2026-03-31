@@ -15,6 +15,8 @@ export const Footer = ({ onOpenPopup }: FooterProps) => {
     fetchContent().then(setContent);
   }, []);
 
+  const logoSrc = content?.global.logo || 'https://www.efitecsolar.com/assets/images/logo.png';
+  const brand = content?.global.brand || 'SolarTech';
   const cnpj = content?.global.cnpj || '00.000.000/0001-00';
   const address = content?.global.address || 'Rua Exemplo, 123\nCentro - Rio de Janeiro/RJ\nCEP: 20000-000';
   const whatsapp = content?.global.whatsappE164 || '5521999999999';
@@ -26,9 +28,9 @@ export const Footer = ({ onOpenPopup }: FooterProps) => {
           {/* Brand */}
           <div>
             <div className="mb-4">
-              <img 
-                src="https://www.efitecsolar.com/assets/images/logo.png" 
-                alt="EFITEC SOLAR" 
+              <img
+                src={logoSrc}
+                alt="EFITEC SOLAR"
                 className="h-10 md:h-12 w-auto mb-4"
                 width="150"
                 height="50"
@@ -98,7 +100,7 @@ export const Footer = ({ onOpenPopup }: FooterProps) => {
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-border text-center">
           <p className="text-sm text-muted-foreground">
-            © {new Date().getFullYear()} SolarTech. Todos os direitos reservados.
+            © {new Date().getFullYear()} {brand}. Todos os direitos reservados.
           </p>
         </div>
       </div>

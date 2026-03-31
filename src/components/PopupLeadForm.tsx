@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -266,17 +266,7 @@ export const PopupLeadForm = ({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto safe-area-bottom" aria-modal="true">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex-1"></div>
-          <h2 className="text-xl sm:text-2xl font-bold text-center flex-1 whitespace-nowrap">Orçamento gratuito</h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-secondary rounded-lg transition-colors flex-1 flex justify-end"
-            aria-label="Fechar"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        <h2 className="text-xl sm:text-2xl font-bold text-center mb-4 whitespace-nowrap">Orçamento gratuito</h2>
 
         <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
           <div className="relative">
