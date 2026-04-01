@@ -69,6 +69,8 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.9.1",
+    "@emnapi/wasi-threads": "^1.2.0",
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",
     "@types/express": "^5.0.5",
