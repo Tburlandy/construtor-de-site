@@ -1,0 +1,46 @@
+name: Process Export Jobs
+
+on:
+  workflow_dispatch:
+    inputs:
+      projectId:
+        description: "Project ID (optional)"
+        required: false
+        type: string
+      jobId:
+        description: "Export job ID (optional)"
+        required: false
+        type: string
+  schedule:
+    - cron: "*/5 * * * *"
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_EXPORTS_BUCKET: ${{ secrets.SUPABASE_EXPORTS_BUCKET }}
+      EXPORT_JOB_ID: ${{ github.event.inputs.jobId }}
+      EXPORT_PROJECT_ID: ${{ github.event.inputs.projectId }}
+      PROJECT_DOMAIN: ${{ secrets.PROJECT_DOMAIN }}
+      VITE_PROJECT_DOMAIN: ${{ secrets.VITE_PROJECT_DOMAIN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Process queued export jobs
+        run: node scripts/process-export-jobs.mjs
+

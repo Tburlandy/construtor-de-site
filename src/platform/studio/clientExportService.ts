@@ -1,14 +1,17 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { ProjectSchema, type ProjectId } from '../contracts/index.js';
 
 const DEFAULT_BASE_PATH = '/pagina/';
 const DEFAULT_DOMAIN = 'https://www.efitecsolar.com';
-const DATA_PROJECTS_ROOT = path.resolve('data', 'projects');
-const DIST_ROOT = path.resolve('dist');
-const ARTIFACTS_ROOT = path.resolve('artifacts', 'clients');
-const LEGACY_CONTENT_PATH = path.resolve('content', 'content.json');
+const REPO_ROOT = path.resolve('.');
+const DATA_PROJECTS_ROOT = path.join(REPO_ROOT, 'data', 'projects');
+const LEGACY_CONTENT_PATH = path.join(REPO_ROOT, 'content', 'content.json');
+const IS_SERVERLESS_RUNTIME = Boolean(process.env.VERCEL);
+const WORK_ROOT = IS_SERVERLESS_RUNTIME ? path.join(os.tmpdir(), 'studio-export-runtime') : REPO_ROOT;
+const ARTIFACTS_ROOT = path.join(WORK_ROOT, 'artifacts', 'clients');
 
 type JsonLike = Record<string, unknown>;
 
@@ -219,13 +222,13 @@ async function resolveClientGtmId(clientId: ProjectId): Promise<string | null> {
   return normalizeGtmId(legacyGlobal?.gtmId);
 }
 
-async function hardcodeClientGtmIntoDistIndex(clientId: ProjectId): Promise<void> {
+async function hardcodeClientGtmIntoDistIndex(clientId: ProjectId, distRoot: string): Promise<void> {
   const gtmId = await resolveClientGtmId(clientId);
   if (!gtmId) {
     return;
   }
 
-  const indexPath = path.join(DIST_ROOT, 'index.html');
+  const indexPath = path.join(distRoot, 'index.html');
   const rawIndexHtml = await fs.readFile(indexPath, 'utf-8');
   const withoutPreviousMarkers = rawIndexHtml
     .replace(/<!-- CLIENT ZIP GTM HEAD START -->[\s\S]*?<!-- CLIENT ZIP GTM HEAD END -->\s*/g, '')
@@ -283,9 +286,9 @@ async function runCommand(command: string, args: string[], options: RunCommandOp
   });
 }
 
-async function copyBuildSideFiles() {
+async function copyBuildSideFiles(params: { workspaceRoot: string; distRoot: string }) {
   await fs
-    .copyFile(path.resolve('public', '.htaccess'), path.join(DIST_ROOT, '.htaccess'))
+    .copyFile(path.join(params.workspaceRoot, 'public', '.htaccess'), path.join(params.distRoot, '.htaccess'))
     .catch((error: unknown) => {
       if (
         error &&
@@ -298,8 +301,11 @@ async function copyBuildSideFiles() {
       throw error;
     });
 
-  await fs.mkdir(path.join(DIST_ROOT, 'content'), { recursive: true });
-  await fs.copyFile(path.resolve('content', 'content.json'), path.join(DIST_ROOT, 'content', 'content.json'));
+  await fs.mkdir(path.join(params.distRoot, 'content'), { recursive: true });
+  await fs.copyFile(
+    path.join(params.workspaceRoot, 'content', 'content.json'),
+    path.join(params.distRoot, 'content', 'content.json'),
+  );
 }
 
 function formatTimestamp(date: Date): string {
@@ -313,7 +319,56 @@ function formatTimestamp(date: Date): string {
   return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
-async function buildClientDist(clientId: ProjectId, config: ClientExportBuildConfig) {
+async function prepareBuildWorkspace(clientId: ProjectId): Promise<string> {
+  if (!IS_SERVERLESS_RUNTIME) {
+    return REPO_ROOT;
+  }
+
+  const workspaceRoot = path.join(WORK_ROOT, 'workspaces', `${clientId}-${Date.now()}`);
+  await fs.mkdir(workspaceRoot, { recursive: true });
+
+  const entriesToCopy = [
+    'index.html',
+    'vite.config.ts',
+    'vite-plugin-studio.ts',
+    'studio-publish-service.ts',
+    'studio-publish-config-service.ts',
+    'src',
+    'public',
+    'content',
+    'data',
+    'scripts',
+    'tsconfig.app.json',
+  ];
+
+  for (const entry of entriesToCopy) {
+    const sourcePath = path.join(REPO_ROOT, entry);
+    const targetPath = path.join(workspaceRoot, entry);
+    try {
+      const stat = await fs.stat(sourcePath);
+      if (stat.isDirectory()) {
+        await fs.cp(sourcePath, targetPath, { recursive: true });
+      } else {
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.copyFile(sourcePath, targetPath);
+      }
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          continue;
+        }
+      }
+      throw error;
+    }
+  }
+
+  await fs.symlink(path.join(REPO_ROOT, 'node_modules'), path.join(workspaceRoot, 'node_modules'), 'dir');
+  return workspaceRoot;
+}
+
+async function buildClientDist(clientId: ProjectId, config: ClientExportBuildConfig): Promise<string> {
+  const workspaceRoot = await prepareBuildWorkspace(clientId);
+  const distRoot = path.join(workspaceRoot, 'dist');
   const env = {
     ...process.env,
     PROJECT_ID: clientId,
@@ -325,17 +380,29 @@ async function buildClientDist(clientId: ProjectId, config: ClientExportBuildCon
     VITE_STUDIO_ENABLED: 'false',
   };
 
-  await runCommand(process.execPath, [path.resolve('node_modules', 'vite', 'bin', 'vite.js'), 'build'], {
+  await runCommand(
+    process.execPath,
+    [
+      path.join(workspaceRoot, 'node_modules', 'vite', 'bin', 'vite.js'),
+      'build',
+      '--config',
+      path.join(workspaceRoot, 'scripts', 'vite-export.config.mjs'),
+    ],
+    {
+      cwd: workspaceRoot,
+      env,
+    },
+  );
+
+  await copyBuildSideFiles({ workspaceRoot, distRoot });
+
+  await runCommand(process.execPath, [path.join(workspaceRoot, 'scripts', 'generate-project-seo-artifacts.mjs')], {
+    cwd: workspaceRoot,
     env,
   });
 
-  await copyBuildSideFiles();
-
-  await runCommand(process.execPath, [path.resolve('scripts', 'generate-project-seo-artifacts.mjs')], {
-    env,
-  });
-
-  await hardcodeClientGtmIntoDistIndex(clientId);
+  await hardcodeClientGtmIntoDistIndex(clientId, distRoot);
+  return workspaceRoot;
 }
 
 function buildDownloadUrl(clientId: ProjectId, fileName: string): string {
@@ -345,9 +412,12 @@ function buildDownloadUrl(clientId: ProjectId, fileName: string): string {
 export async function exportClientZip(clientIdRaw: string): Promise<ExportClientZipResult> {
   const clientId = parseClientIdOrThrow(clientIdRaw);
   const buildConfig = await resolveBuildConfig(clientId);
+  let workspaceRoot = REPO_ROOT;
+  let distRoot = path.join(REPO_ROOT, 'dist');
 
   try {
-    await buildClientDist(clientId, buildConfig);
+    workspaceRoot = await buildClientDist(clientId, buildConfig);
+    distRoot = path.join(workspaceRoot, 'dist');
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Falha ao gerar build estático do cliente.';
     throw new ClientExportError(500, message);
@@ -360,32 +430,38 @@ export async function exportClientZip(clientIdRaw: string): Promise<ExportClient
   const fileName = `${clientId}-${timestamp}.zip`;
   const absoluteZipPath = path.join(zipDirectoryPath, fileName);
 
-  await fs.mkdir(path.dirname(buildPath), { recursive: true });
-  await fs.mkdir(zipDirectoryPath, { recursive: true });
-  await fs.rm(buildPath, { recursive: true, force: true });
-  await fs.cp(DIST_ROOT, buildPath, { recursive: true });
-
   try {
-    await runCommand('zip', ['-rq', absoluteZipPath, '.'], { cwd: buildPath });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Falha ao compactar ZIP do cliente.';
-    throw new ClientExportError(500, message);
-  }
+    await fs.mkdir(path.dirname(buildPath), { recursive: true });
+    await fs.mkdir(zipDirectoryPath, { recursive: true });
+    await fs.rm(buildPath, { recursive: true, force: true });
+    await fs.cp(distRoot, buildPath, { recursive: true });
 
-  const stat = await fs.stat(absoluteZipPath);
+    try {
+      await runCommand('zip', ['-rq', absoluteZipPath, '.'], { cwd: buildPath });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao compactar ZIP do cliente.';
+      throw new ClientExportError(500, message);
+    }
 
-  return {
-    clientId,
-    buildPath,
-    buildConfig,
-    zip: {
+    const stat = await fs.stat(absoluteZipPath);
+
+    return {
       clientId,
-      fileName,
-      absolutePath: absoluteZipPath,
-      sizeInBytes: stat.size,
-      createdAt: stat.mtime.toISOString(),
-    },
-  };
+      buildPath,
+      buildConfig,
+      zip: {
+        clientId,
+        fileName,
+        absolutePath: absoluteZipPath,
+        sizeInBytes: stat.size,
+        createdAt: stat.mtime.toISOString(),
+      },
+    };
+  } finally {
+    if (IS_SERVERLESS_RUNTIME && workspaceRoot !== REPO_ROOT) {
+      await fs.rm(workspaceRoot, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
 }
 
 export async function listClientExports(clientIdRaw: string): Promise<ClientExportZipArtifact[]> {

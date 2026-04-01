@@ -48,8 +48,28 @@ create table if not exists public.studio_project_publications (
   message text null
 );
 
+create table if not exists public.studio_export_jobs (
+  job_id text primary key,
+  project_id text not null references public.studio_projects(project_id) on delete cascade,
+  status text not null check (status in ('queued', 'running', 'success', 'failed')),
+  created_at timestamptz not null,
+  updated_at timestamptz not null,
+  started_at timestamptz null,
+  finished_at timestamptz null,
+  artifact_file_name text null,
+  artifact_storage_path text null,
+  artifact_size_bytes bigint null,
+  error_message text null
+);
+
 create index if not exists idx_studio_versions_project_created_at
   on public.studio_project_versions (project_id, created_at desc);
 
 create index if not exists idx_studio_publications_project_created_at
   on public.studio_project_publications (project_id, created_at desc);
+
+create index if not exists idx_studio_export_jobs_project_created_at
+  on public.studio_export_jobs (project_id, created_at desc);
+
+create index if not exists idx_studio_export_jobs_status_created_at
+  on public.studio_export_jobs (status, created_at asc);

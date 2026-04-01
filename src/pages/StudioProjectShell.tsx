@@ -627,9 +627,52 @@ export default function StudioProjectShell() {
       }
 
       const zipInfo = (payload as { zip?: { downloadUrl?: unknown } }).zip;
-      const downloadUrlRaw = zipInfo?.downloadUrl;
+      const queuedJob = (payload as { job?: { jobId?: unknown; status?: unknown } }).job;
+
+      let downloadUrlRaw =
+        typeof zipInfo?.downloadUrl === 'string' && zipInfo.downloadUrl.trim()
+          ? zipInfo.downloadUrl
+          : null;
+
+      if (!downloadUrlRaw && typeof queuedJob?.jobId === 'string' && queuedJob.jobId.trim()) {
+        const jobId = queuedJob.jobId;
+        const pollTimeoutMs = 6 * 60 * 1000;
+        const pollIntervalMs = 2500;
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < pollTimeoutMs) {
+          const statusResponse = await fetch(
+            `/api/clients/${encodeURIComponent(projectId)}/export-jobs/${encodeURIComponent(jobId)}`,
+          );
+          const statusPayload = await statusResponse.json().catch(() => ({}));
+          if (!statusResponse.ok) {
+            throw new Error(
+              getErrorMessage(statusPayload, 'Não foi possível acompanhar o status da exportação.'),
+            );
+          }
+
+          const status = (statusPayload as { status?: unknown }).status;
+          const statusDownloadUrl = (statusPayload as { downloadUrl?: unknown }).downloadUrl;
+          if (
+            status === 'success' &&
+            typeof statusDownloadUrl === 'string' &&
+            statusDownloadUrl.trim()
+          ) {
+            downloadUrlRaw = statusDownloadUrl;
+            break;
+          }
+          if (status === 'failed') {
+            throw new Error(
+              getErrorMessage(statusPayload, 'Falha ao processar a exportação do cliente.'),
+            );
+          }
+
+          await new Promise((resolve) => window.setTimeout(resolve, pollIntervalMs));
+        }
+      }
+
       if (typeof downloadUrlRaw !== 'string' || !downloadUrlRaw.trim()) {
-        throw new Error('Exportação concluída, mas sem URL de download retornada.');
+        throw new Error('A exportação foi iniciada, mas o arquivo ainda não ficou disponível.');
       }
 
       const anchor = document.createElement('a');
