@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +16,7 @@ const EXPORT_JOBS_TABLE = 'studio_export_jobs';
 const DEFAULT_BASE_PATH = '/pagina/';
 const DEFAULT_DOMAIN = 'https://www.efitecsolar.com';
 const EXPORTS_BUCKET = process.env.SUPABASE_EXPORTS_BUCKET || 'studio-exports';
+const TUS_RESUMABLE_VERSION = '1.0.0';
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -100,6 +102,94 @@ function getErrorMessage(error) {
     return error.message.trim().slice(0, 3500);
   }
   return 'Falha ao processar exportação.';
+}
+
+function encodeUploadMetadata(metadata) {
+  return Object.entries(metadata)
+    .map(([key, value]) => `${key} ${Buffer.from(String(value)).toString('base64')}`)
+    .join(',');
+}
+
+async function uploadWithResumableTus({ supabaseUrl, serviceRoleKey, storagePath, zipAbsolutePath, zipSizeBytes }) {
+  const createResponse = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/storage/v1/upload/resumable`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${serviceRoleKey}`,
+      'tus-resumable': TUS_RESUMABLE_VERSION,
+      'upload-length': String(zipSizeBytes),
+      'upload-metadata': encodeUploadMetadata({
+        bucketName: EXPORTS_BUCKET,
+        objectName: storagePath,
+        contentType: 'application/zip',
+        cacheControl: '3600',
+      }),
+      'x-upsert': 'true',
+    },
+  });
+
+  if (!createResponse.ok) {
+    const body = await createResponse.text().catch(() => '');
+    throw new Error(
+      `Falha ao iniciar upload resumable (${createResponse.status})${body ? `: ${body}` : ''}`,
+    );
+  }
+
+  const locationHeader = createResponse.headers.get('location');
+  if (!locationHeader) {
+    throw new Error('Falha ao iniciar upload resumable: header Location ausente.');
+  }
+  const uploadUrl = new URL(locationHeader, supabaseUrl).toString();
+
+  const patchResponse = await fetch(uploadUrl, {
+    method: 'PATCH',
+    headers: {
+      authorization: `Bearer ${serviceRoleKey}`,
+      'tus-resumable': TUS_RESUMABLE_VERSION,
+      'upload-offset': '0',
+      'content-type': 'application/offset+octet-stream',
+    },
+    body: createReadStream(zipAbsolutePath),
+    duplex: 'half',
+  });
+
+  if (!patchResponse.ok) {
+    const body = await patchResponse.text().catch(() => '');
+    throw new Error(
+      `Falha no upload resumable (${patchResponse.status})${body ? `: ${body}` : ''}`,
+    );
+  }
+}
+
+async function uploadZipArtifact({
+  supabase,
+  supabaseUrl,
+  serviceRoleKey,
+  storagePath,
+  zipAbsolutePath,
+  zipSizeBytes,
+}) {
+  const zipBuffer = await fs.readFile(zipAbsolutePath);
+  const { error: uploadError } = await supabase.storage.from(EXPORTS_BUCKET).upload(storagePath, zipBuffer, {
+    upsert: true,
+    contentType: 'application/zip',
+    cacheControl: '3600',
+  });
+  if (!uploadError) {
+    return;
+  }
+
+  if (uploadError.statusCode === '413' || uploadError.status === 400) {
+    await uploadWithResumableTus({
+      supabaseUrl,
+      serviceRoleKey,
+      storagePath,
+      zipAbsolutePath,
+      zipSizeBytes,
+    });
+    return;
+  }
+
+  throw uploadError;
 }
 
 async function ensureBucket(supabase) {
@@ -252,6 +342,8 @@ async function markJobSuccess(supabase, jobId, payload) {
 
 async function processJob(supabase, job) {
   const projectId = String(job.project_id);
+  const supabaseUrl = requiredEnv('SUPABASE_URL');
+  const serviceRoleKey = requiredEnv('SUPABASE_SERVICE_ROLE_KEY');
   const contentPath = path.join(repoRoot, 'content', 'content.json');
   const originalContent = await fs.readFile(contentPath, 'utf-8');
   const projectContent = await loadProjectContent(supabase, projectId);
@@ -292,19 +384,18 @@ async function processJob(supabase, job) {
       env,
     });
 
-    const zipBuffer = await fs.readFile(zipAbsolutePath);
-    const { error: uploadError } = await supabase.storage
-      .from(EXPORTS_BUCKET)
-      .upload(storagePath, zipBuffer, {
-        upsert: true,
-        contentType: 'application/zip',
-        cacheControl: '3600',
-      });
-    if (uploadError) {
-      throw uploadError;
-    }
-
     const stat = await fs.stat(zipAbsolutePath);
+    console.log(
+      `[export-jobs] ZIP gerado: ${(stat.size / (1024 * 1024)).toFixed(2)} MB (${fileName})`,
+    );
+    await uploadZipArtifact({
+      supabase,
+      supabaseUrl,
+      serviceRoleKey,
+      storagePath,
+      zipAbsolutePath,
+      zipSizeBytes: stat.size,
+    });
     await markJobSuccess(supabase, String(job.job_id), {
       artifactFileName: fileName,
       artifactStoragePath: storagePath,
