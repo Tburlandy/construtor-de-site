@@ -1140,6 +1140,34 @@ export default function StudioProjectShell() {
                       />
                     </div>
                     <div className="space-y-1.5">
+                      <p className={builderLabelClassName}>Caminho de publicação (base path)</p>
+                      <input
+                        className={builderInputClassName}
+                        value={content.global.buildBasePath ?? ''}
+                        onChange={(event) =>
+                          handleContentChange((current) => ({
+                            ...current,
+                            global: {
+                              ...current.global,
+                              ...(event.target.value.trim()
+                                ? { buildBasePath: event.target.value }
+                                : (() => {
+                                    const nextGlobal = { ...current.global };
+                                    delete nextGlobal.buildBasePath;
+                                    return nextGlobal;
+                                  })()),
+                            },
+                          }))
+                        }
+                        placeholder="/pagina/"
+                      />
+                      <p className="text-[11px] text-[var(--builder-text-muted)]">
+                        Ex.: <span className="font-mono">/pagina/</span> (padrão),{' '}
+                        <span className="font-mono">/ecobox/</span> ou{' '}
+                        <span className="font-mono">/</span> para raiz do domínio.
+                      </p>
+                    </div>
+                    <div className="space-y-1.5">
                       <p className={builderLabelClassName}>CNPJ</p>
                       <input
                         className={builderInputClassName}

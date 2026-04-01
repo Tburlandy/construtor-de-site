@@ -1,6 +1,11 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/**/*.ts": {
+      "includeFiles": "node_modules/@rollup/rollup-linux-x64-gnu/**"
+    }
+  },
   "rewrites": [
     { "source": "/((?!api).*)", "destination": "/index.html" }
   ]

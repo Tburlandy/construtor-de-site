@@ -112,6 +112,7 @@ export const ContentSchema = z.object({
     cnpj: z.string(),
     address: z.string(),
     siteUrl: z.string(),
+    buildBasePath: z.string().optional(),
     gtmId: z.string().optional(),
     webhookUrl: z.string().optional(),
     secondaryWebhookUrl: z.string().optional(),

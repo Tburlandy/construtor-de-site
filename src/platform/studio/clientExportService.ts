@@ -111,14 +111,30 @@ async function readJsonIfExists(filePath: string): Promise<unknown | null> {
 }
 
 async function resolveClientBuildBasePath(clientId: ProjectId): Promise<string> {
-  const metadataPath = path.join(DATA_PROJECTS_ROOT, clientId, 'metadata.json');
-  const metadata = maybeRecord(await readJsonIfExists(metadataPath));
-  const slugRaw = metadata?.slug;
-  const slug = typeof slugRaw === 'string' ? slugRaw.trim() : '';
-  if (!slug) {
-    return DEFAULT_BASE_PATH;
+  const envBasePath = process.env.VITE_PROJECT_BASE_PATH || process.env.PROJECT_BASE_PATH;
+  if (typeof envBasePath === 'string' && envBasePath.trim()) {
+    return normalizeBasePath(envBasePath);
   }
-  return normalizeBasePath(`/${slug}`);
+
+  const contentPath = path.join(DATA_PROJECTS_ROOT, clientId, 'content.json');
+  const contentRecord = maybeRecord(await readJsonIfExists(contentPath));
+  const content = maybeRecord(contentRecord?.content);
+  const global = maybeRecord(content?.global);
+  const configuredBasePath =
+    typeof global?.buildBasePath === 'string' ? global.buildBasePath : undefined;
+  if (configuredBasePath?.trim()) {
+    return normalizeBasePath(configuredBasePath);
+  }
+
+  const legacyContent = maybeRecord(await readJsonIfExists(LEGACY_CONTENT_PATH));
+  const legacyGlobal = maybeRecord(legacyContent?.global);
+  const legacyConfiguredBasePath =
+    typeof legacyGlobal?.buildBasePath === 'string' ? legacyGlobal.buildBasePath : undefined;
+  if (legacyConfiguredBasePath?.trim()) {
+    return normalizeBasePath(legacyConfiguredBasePath);
+  }
+
+  return DEFAULT_BASE_PATH;
 }
 
 function resolveDomainFromCanonical(canonical: string | undefined, siteUrl?: string): string | null {
