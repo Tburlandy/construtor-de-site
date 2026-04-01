@@ -307,41 +307,53 @@ function buildExportJobPayload(projectId: string, job: {
 }
 
 async function triggerExportJobRunner(params: { projectId: string; jobId: string }): Promise<void> {
-  const token = process.env.GITHUB_TOKEN;
-  const workflowFile = process.env.EXPORT_WORKFLOW_FILE || 'process-export-jobs.yml';
-  const workflowRef = process.env.EXPORT_WORKFLOW_REF || 'main';
-  const owner = process.env.EXPORT_WORKFLOW_OWNER || process.env.VERCEL_GIT_REPO_OWNER;
-  const repo = process.env.EXPORT_WORKFLOW_REPO || process.env.VERCEL_GIT_REPO_SLUG;
+  const token = (process.env.GITHUB_TOKEN || '').trim();
+  const workflowFile = (process.env.EXPORT_WORKFLOW_FILE || 'process-export-jobs.yml').trim();
+  const workflowRef = (process.env.EXPORT_WORKFLOW_REF || 'main').trim();
+  const owner = (process.env.EXPORT_WORKFLOW_OWNER || process.env.VERCEL_GIT_REPO_OWNER || '').trim();
+  const repo = (process.env.EXPORT_WORKFLOW_REPO || process.env.VERCEL_GIT_REPO_SLUG || '').trim();
 
   if (!token || !owner || !repo) {
     return;
   }
 
-  const response = await fetch(
-    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflowFile)}/dispatches`,
-    {
-      method: 'POST',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'construtor-export-orchestrator',
-      },
-      body: JSON.stringify({
-        ref: workflowRef,
-        inputs: {
-          projectId: params.projectId,
-          jobId: params.jobId,
-        },
-      }),
-    },
-  );
+  const workflowCandidates = [workflowFile, `.github/workflows/${workflowFile}`];
+  let lastError: string | null = null;
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(
-      `Falha ao disparar workflow de exportação (${response.status})${body ? `: ${body}` : ''}`,
+  for (const candidate of workflowCandidates) {
+    const response = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(candidate)}/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'construtor-export-orchestrator',
+        },
+        body: JSON.stringify({
+          ref: workflowRef,
+          inputs: {
+            projectId: params.projectId,
+            jobId: params.jobId,
+          },
+        }),
+      },
     );
+
+    if (response.ok) {
+      return;
+    }
+
+    const body = await response.text().catch(() => '');
+    lastError = `workflow=${candidate} status=${response.status}${body ? ` body=${body}` : ''}`;
+    if (response.status !== 404) {
+      break;
+    }
+  }
+
+  if (lastError) {
+    throw new Error(`Falha ao disparar workflow de exportação: ${lastError}`);
   }
 }
 
