@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Env puxado da Vercel (não versionar)
+.env.production.pull
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
