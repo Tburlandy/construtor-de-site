@@ -15,6 +15,14 @@ import { createProjectPublicationRepository } from './src/platform/repositories/
 import { createProjectSeoConfigRepository } from './src/platform/repositories/projectSeoConfigRepository.js';
 import { createProjectVersionRepository } from './src/platform/repositories/projectVersionRepository.js';
 import {
+  createSupabaseProjectContentRepository,
+  createSupabaseProjectMetadataRepository,
+  createSupabaseProjectPublicationRepository,
+  createSupabaseProjectSeoConfigRepository,
+  createSupabaseProjectVersionRepository,
+  createSupabaseStudioClient,
+} from './src/platform/repositories/supabaseStudioRepositories.js';
+import {
   buildProjectContentRecord,
   parseGlobalSiteContentJson,
   siteContentFromRecord,
@@ -55,6 +63,17 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const DEFAULT_CLIENT_EXPORT_BASE_PATH = '/pagina/';
+const DEFAULT_CLIENT_EXPORT_DOMAIN = 'https://www.efitecsolar.com';
+
+function resolveRuntimeEnv(
+  env: Record<string, string> | undefined,
+  key: string,
+): string | undefined {
+  const value = env?.[key] ?? process.env[key];
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
 
 function parseProjectIdOrThrow(projectIdRaw: string): ProjectId {
   try {
@@ -74,6 +93,73 @@ async function readLegacyContent(contentPath: string): Promise<Content> {
   return parseGlobalSiteContentJson(JSON.parse(raw));
 }
 
+function normalizeExportBasePath(rawPath: string | undefined): string {
+  const trimmed = rawPath?.trim();
+  if (!trimmed) {
+    return DEFAULT_CLIENT_EXPORT_BASE_PATH;
+  }
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
+}
+
+function normalizeExportDomain(rawDomain: string | undefined): string | null {
+  const trimmed = rawDomain?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(withProtocol).origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveDomainFromCanonical(canonical: string | undefined, siteUrl: string): string | null {
+  const canonicalTrimmed = canonical?.trim();
+  if (!canonicalTrimmed) {
+    return null;
+  }
+
+  try {
+    return new URL(canonicalTrimmed).origin;
+  } catch {
+    // tenta resolver canonical relativa com base no siteUrl.
+  }
+
+  const normalizedSiteUrl = normalizeExportDomain(siteUrl);
+  if (!normalizedSiteUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(canonicalTrimmed, normalizedSiteUrl).origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveClientExportBuildConfig(
+  content: Content,
+  env: Record<string, string> | undefined,
+): { basePath: string; domain: string } {
+  const envBasePath =
+    resolveRuntimeEnv(env, 'VITE_PROJECT_BASE_PATH') || resolveRuntimeEnv(env, 'PROJECT_BASE_PATH');
+  const envDomain = normalizeExportDomain(
+    resolveRuntimeEnv(env, 'VITE_PROJECT_DOMAIN') || resolveRuntimeEnv(env, 'PROJECT_DOMAIN'),
+  );
+
+  return {
+    basePath: normalizeExportBasePath(envBasePath || content.global.buildBasePath),
+    domain:
+      envDomain ||
+      normalizeExportDomain(content.global.siteUrl) ||
+      resolveDomainFromCanonical(content.seo.canonical, content.global.siteUrl) ||
+      DEFAULT_CLIENT_EXPORT_DOMAIN,
+  };
+}
+
 function getProjectMediaDirectory(
   mediaProjectsPath: string,
   projectId: ProjectId,
@@ -86,7 +172,7 @@ function getProjectMediaUrl(projectId: ProjectId, mediaKind: 'img' | 'vid', file
   return `/media/projects/${projectId}/${mediaKind}/${filename}`;
 }
 
-export function studioPlugin(): Plugin {
+export function studioPlugin(options?: { env?: Record<string, string> }): Plugin {
   return {
     name: 'studio-server',
     configureServer(server) {
@@ -95,22 +181,72 @@ export function studioPlugin(): Plugin {
       const mediaVidPath = path.join(__dirname, 'public', 'media', 'vid');
       const mediaProjectsPath = path.join(__dirname, 'public', 'media', 'projects');
       const projectsDataRoot = path.join(__dirname, 'data', 'projects');
+      const runtimeEnv = options?.env;
 
-      const projectMetadataRepository = createProjectMetadataRepository({
-        projectsRootDir: projectsDataRoot,
+      const supabaseStudio = createSupabaseStudioClient({
+        supabaseUrl: resolveRuntimeEnv(runtimeEnv, 'SUPABASE_URL'),
+        serviceRoleKey: resolveRuntimeEnv(runtimeEnv, 'SUPABASE_SERVICE_ROLE_KEY'),
+        storageBucket: resolveRuntimeEnv(runtimeEnv, 'SUPABASE_STORAGE_BUCKET') || 'studio-media',
       });
-      const projectContentRepository = createProjectContentRepository({
-        projectsRootDir: projectsDataRoot,
-      });
-      const projectPublicationRepository = createProjectPublicationRepository({
-        projectsRootDir: projectsDataRoot,
-      });
-      const projectSeoConfigRepository = createProjectSeoConfigRepository({
-        projectsRootDir: projectsDataRoot,
-      });
-      const projectVersionRepository = createProjectVersionRepository({
-        projectsRootDir: projectsDataRoot,
-      });
+      const supabaseClient = supabaseStudio?.client ?? null;
+      const supabaseStorageBucket = supabaseStudio?.storageBucket ?? null;
+      const supabaseExportsBucket = resolveRuntimeEnv(runtimeEnv, 'SUPABASE_EXPORTS_BUCKET') || 'studio-exports';
+      const hasSupabasePersistence = Boolean(supabaseClient);
+
+      const projectMetadataRepository = supabaseClient
+        ? createSupabaseProjectMetadataRepository(supabaseClient)
+        : createProjectMetadataRepository({
+            projectsRootDir: projectsDataRoot,
+          });
+      const projectContentRepository = supabaseClient
+        ? createSupabaseProjectContentRepository(supabaseClient)
+        : createProjectContentRepository({
+            projectsRootDir: projectsDataRoot,
+          });
+      const projectPublicationRepository = supabaseClient
+        ? createSupabaseProjectPublicationRepository(supabaseClient)
+        : createProjectPublicationRepository({
+            projectsRootDir: projectsDataRoot,
+          });
+      const projectSeoConfigRepository = supabaseClient
+        ? createSupabaseProjectSeoConfigRepository(supabaseClient)
+        : createProjectSeoConfigRepository({
+            projectsRootDir: projectsDataRoot,
+          });
+      const projectVersionRepository = supabaseClient
+        ? createSupabaseProjectVersionRepository(supabaseClient)
+        : createProjectVersionRepository({
+            projectsRootDir: projectsDataRoot,
+          });
+
+      const uploadProjectMediaToSupabase = async (params: {
+        projectId: ProjectId;
+        mediaKind: 'img' | 'vid';
+        filename: string;
+        body: Buffer;
+        contentType: string;
+      }): Promise<string> => {
+        if (!supabaseClient || !supabaseStorageBucket) {
+          throw new Error('Supabase Storage não configurado');
+        }
+
+        const storagePath = `projects/${params.projectId}/${params.mediaKind}/${params.filename}`;
+        const { error } = await supabaseClient.storage
+          .from(supabaseStorageBucket)
+          .upload(storagePath, params.body, {
+            upsert: false,
+            contentType: params.contentType,
+            cacheControl: '3600',
+          });
+        if (error) {
+          throw error;
+        }
+
+        const { data } = supabaseClient.storage
+          .from(supabaseStorageBucket)
+          .getPublicUrl(storagePath);
+        return data.publicUrl;
+      };
 
       const loadProjectScopedContent = async (projectId: ProjectId): Promise<Content> => {
         const record = await projectContentRepository.getByProjectId(projectId);
@@ -321,7 +457,21 @@ export function studioPlugin(): Plugin {
           }
 
           if (req.method === 'POST' && segments.length === 2 && segments[1] === 'export-zip') {
-            const result = await exportClientZip(segments[0]);
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Cliente não encontrado' });
+            }
+
+            const content = await loadProjectScopedContent(projectId);
+            const buildConfig = resolveClientExportBuildConfig(content, runtimeEnv);
+            const result = await exportClientZip({
+              clientIdRaw: projectId,
+              content,
+              buildConfig,
+              supabaseClient,
+              exportsBucket: supabaseExportsBucket,
+            });
             return sendJson(201, {
               clientId: result.clientId,
               buildPath: result.buildPath,
@@ -445,6 +595,7 @@ export function studioPlugin(): Plugin {
             file?: {
               path: string;
               originalname: string;
+              mimetype?: string;
             };
           };
           return uploadRequest.file;
@@ -647,7 +798,21 @@ export function studioPlugin(): Plugin {
           }
 
           if (req.method === 'POST' && segments.length === 2 && segments[1] === 'export-zip') {
-            const result = await exportClientZip(segments[0]);
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Cliente não encontrado' });
+            }
+
+            const content = await loadProjectScopedContent(projectId);
+            const buildConfig = resolveClientExportBuildConfig(content, runtimeEnv);
+            const result = await exportClientZip({
+              clientIdRaw: projectId,
+              content,
+              buildConfig,
+              supabaseClient,
+              exportsBucket: supabaseExportsBucket,
+            });
             return sendJson(201, {
               clientId: result.clientId,
               buildPath: result.buildPath,
@@ -747,12 +912,15 @@ export function studioPlugin(): Plugin {
           if (req.method === 'POST' && segments.length === 2 && segments[1] === 'upload-image') {
             const projectId = parseProjectIdOrThrow(segments[0]);
             const projectMediaImgPath = getProjectMediaDirectory(mediaProjectsPath, projectId, 'img');
-            await fs.mkdir(projectMediaImgPath, { recursive: true });
+            if (!hasSupabasePersistence) {
+              await fs.mkdir(projectMediaImgPath, { recursive: true });
+            }
 
             let file:
               | {
                   path: string;
                   originalname: string;
+                  mimetype?: string;
                 }
               | undefined;
             try {
@@ -768,12 +936,29 @@ export function studioPlugin(): Plugin {
 
             try {
               const filename = `${Date.now()}-${Math.random().toString(36).substring(7)}.webp`;
-              const outputPath = path.join(projectMediaImgPath, filename);
-              await sharp(file.path)
+              const optimizedBuffer = await sharp(file.path)
                 .webp({ quality: 75 })
                 .resize(1920, null, { withoutEnlargement: true })
-                .toFile(outputPath);
+                .toBuffer();
               await fs.unlink(file.path);
+
+              if (hasSupabasePersistence) {
+                const uploadedUrl = await uploadProjectMediaToSupabase({
+                  projectId,
+                  mediaKind: 'img',
+                  filename,
+                  body: optimizedBuffer,
+                  contentType: 'image/webp',
+                });
+                return sendJson(200, {
+                  projectId,
+                  url: uploadedUrl,
+                  filename,
+                });
+              }
+
+              const outputPath = path.join(projectMediaImgPath, filename);
+              await fs.writeFile(outputPath, optimizedBuffer);
               return sendJson(200, {
                 projectId,
                 url: getProjectMediaUrl(projectId, 'img', filename),
@@ -793,12 +978,15 @@ export function studioPlugin(): Plugin {
           if (req.method === 'POST' && segments.length === 2 && segments[1] === 'upload-video') {
             const projectId = parseProjectIdOrThrow(segments[0]);
             const projectMediaVidPath = getProjectMediaDirectory(mediaProjectsPath, projectId, 'vid');
-            await fs.mkdir(projectMediaVidPath, { recursive: true });
+            if (!hasSupabasePersistence) {
+              await fs.mkdir(projectMediaVidPath, { recursive: true });
+            }
 
             let file:
               | {
                   path: string;
                   originalname: string;
+                  mimetype?: string;
                 }
               | undefined;
             try {
@@ -816,10 +1004,28 @@ export function studioPlugin(): Plugin {
               const filename = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
               const ext = path.extname(file.originalname);
               const savedFilename = `${filename}${ext}`;
-              const outputPath = path.join(projectMediaVidPath, savedFilename);
-              await fs.copyFile(file.path, outputPath);
+              const videoBuffer = await fs.readFile(file.path);
               await fs.unlink(file.path);
               const posterFilename = `${filename}-poster.webp`;
+
+              if (hasSupabasePersistence) {
+                const uploadedUrl = await uploadProjectMediaToSupabase({
+                  projectId,
+                  mediaKind: 'vid',
+                  filename: savedFilename,
+                  body: videoBuffer,
+                  contentType: file.mimetype || 'application/octet-stream',
+                });
+                return sendJson(200, {
+                  projectId,
+                  url: uploadedUrl,
+                  filename: savedFilename,
+                  poster: '',
+                });
+              }
+
+              const outputPath = path.join(projectMediaVidPath, savedFilename);
+              await fs.writeFile(outputPath, videoBuffer);
               return sendJson(200, {
                 projectId,
                 url: getProjectMediaUrl(projectId, 'vid', savedFilename),

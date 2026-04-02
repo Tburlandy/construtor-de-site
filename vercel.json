@@ -3,7 +3,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/**/*.ts": {
-      "includeFiles": "{*.ts,index.html,src/**,public/**,content/**,data/projects/**,scripts/**,node_modules/{vite,esbuild,@esbuild/linux-x64,rollup,@rollup/rollup-linux-x64-gnu}/**}"
+      "includeFiles": "{content/**,data/projects/**,.export-template/current/**}"
     }
   },
   "rewrites": [

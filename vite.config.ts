@@ -47,7 +47,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       mode === "development" && componentTagger(),
-      mode === "development" && studioPlugin(),
+      mode === "development" && studioPlugin({ env }),
     ].filter(Boolean),
     define: {
       __STUDIO_ENABLED__: JSON.stringify(studioEnabled),
