@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
@@ -74,7 +74,7 @@ const CityPage = () => {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-2xl md:text-3xl font-bold mb-4">Cidade não encontrada</h1>
-          <a href="/" className="text-base text-primary hover:underline">Voltar para home</a>
+          <Link to="/" className="text-base text-primary hover:underline">Voltar para home</Link>
         </div>
       </div>
     );

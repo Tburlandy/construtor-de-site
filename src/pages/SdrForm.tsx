@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -256,7 +257,7 @@ const SdrForm = () => {
     >
       <header className="sticky top-0 z-20 border-b border-slate-800 bg-gradient-to-r from-slate-950 to-slate-900">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <a href="/" className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3">
             <img
               src="https://www.efitecsolar.com/assets/images/logo.png"
               alt={brand}
@@ -266,7 +267,7 @@ const SdrForm = () => {
               loading="eager"
               decoding="async"
             />
-          </a>
+          </Link>
         </div>
       </header>
 

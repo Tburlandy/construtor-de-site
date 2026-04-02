@@ -5,6 +5,7 @@ import { trackCTAPopupOpen } from '@/lib/gtm';
 import type { Content } from '@/content/schema';
 import { normalizeLogoImageLayout } from '@/lib/imageLayout';
 import { isDomAnchorSectionVisible } from '@/lib/sectionVisibility';
+import { Link } from 'react-router-dom';
 
 interface HeaderProps {
   onOpenPopup: () => void;
@@ -47,7 +48,7 @@ export const Header = ({ onOpenPopup, content }: HeaderProps) => {
     <header className="fixed top-0 left-0 right-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border safe-area-top transition-all duration-300" style={{ marginTop: 'var(--banner-height, 0px)', marginBottom: 0 }}>
       <nav className="container mx-auto px-4 h-16 md:h-20 flex items-center justify-between">
         {/* Logo */}
-        <a href="/" className="flex items-center transition-transform duration-300 hover:scale-105">
+        <Link to="/" className="flex items-center transition-transform duration-300 hover:scale-105">
           <img 
             src={logoSrc}
             alt={content?.global.brand || 'EFITEC SOLAR'}
@@ -60,7 +61,7 @@ export const Header = ({ onOpenPopup, content }: HeaderProps) => {
             loading="eager"
             decoding="async"
           />
-        </a>
+        </Link>
 
         {/* Desktop Menu */}
         <div className="hidden lg:flex items-center gap-8">

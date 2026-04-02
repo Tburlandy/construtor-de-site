@@ -312,15 +312,19 @@ function resolveDomainFromCanonical(canonical: string | undefined, siteUrl: stri
 }
 
 function resolveClientExportBuildConfig(content: Content): { basePath: string; domain: string } {
-  const envBasePath = process.env.VITE_PROJECT_BASE_PATH || process.env.PROJECT_BASE_PATH;
+  const contentBasePath = content.global.buildBasePath?.trim();
+  const envBasePathRaw = process.env.VITE_PROJECT_BASE_PATH || process.env.PROJECT_BASE_PATH;
+  const envBasePath = envBasePathRaw?.trim() === '/' ? undefined : envBasePathRaw;
   const envDomain = normalizeExportDomain(process.env.VITE_PROJECT_DOMAIN || process.env.PROJECT_DOMAIN);
+  const contentDomain =
+    normalizeExportDomain(content.global.siteUrl) ||
+    resolveDomainFromCanonical(content.seo.canonical, content.global.siteUrl);
 
   return {
-    basePath: normalizeExportBasePath(envBasePath || content.global.buildBasePath),
+    basePath: normalizeExportBasePath(contentBasePath || envBasePath),
     domain:
+      contentDomain ||
       envDomain ||
-      normalizeExportDomain(content.global.siteUrl) ||
-      resolveDomainFromCanonical(content.seo.canonical, content.global.siteUrl) ||
       DEFAULT_CLIENT_EXPORT_DOMAIN,
   };
 }

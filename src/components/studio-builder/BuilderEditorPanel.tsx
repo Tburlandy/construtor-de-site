@@ -467,7 +467,7 @@ export function BuilderEditorPanel({
             <p className={builderLabelClassName}>Menu do cabeçalho</p>
             {(content.header?.menu?.length ? content.header.menu : DEFAULT_HEADER_MENU_ITEMS).map((item, index) => (
               <div
-                key={`${item.sectionId}-${index}`}
+                key={`header-menu-item-${index}`}
                 className="grid grid-cols-1 gap-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-2.5 sm:grid-cols-[1fr_1.4fr]"
               >
                 <input
@@ -636,7 +636,7 @@ export function BuilderEditorPanel({
             <div className="space-y-2">
               {heroStats.map((item, index) => (
                 <div
-                  key={`${item.value}-${index}`}
+                  key={`hero-stat-${index}`}
                   className="grid grid-cols-1 gap-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-2.5 sm:grid-cols-2"
                 >
                   <input
@@ -730,7 +730,7 @@ export function BuilderEditorPanel({
             <p className={builderLabelClassName}>Cards de condições</p>
             {financingItems.map((item, index) => (
               <div
-                key={`${item.title}-${index}`}
+                key={`financing-item-${index}`}
                 className="space-y-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-3"
               >
                 <input
@@ -777,7 +777,7 @@ export function BuilderEditorPanel({
       return (
         <div className="space-y-4">
           {content.benefits.map((benefit, index) => (
-            <div key={`${benefit.title}-${index}`} className="rounded-[14px] border border-[var(--builder-border)] bg-[rgba(15,23,42,0.55)] p-3">
+            <div key={`benefit-${index}`} className="rounded-[14px] border border-[var(--builder-border)] bg-[rgba(15,23,42,0.55)] p-3">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-semibold text-[var(--builder-text-primary)]">Benefício {index + 1}</p>
                 <button
@@ -899,7 +899,7 @@ export function BuilderEditorPanel({
             <p className={builderLabelClassName}>Cards</p>
             {cards.map((card, index) => (
               <div
-                key={`${card.title}-${index}`}
+                key={`proofbar-card-${index}`}
                 className="space-y-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-3"
               >
                 <input
@@ -1071,7 +1071,7 @@ export function BuilderEditorPanel({
             <p className={builderLabelClassName}>Lista de serviços</p>
             {services.map((service, index) => (
               <div
-                key={`${service.title}-${index}`}
+                key={`full-service-item-${index}`}
                 className="space-y-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-3"
               >
                 <input
@@ -1210,7 +1210,7 @@ export function BuilderEditorPanel({
             <p className={builderLabelClassName}>Passos</p>
             {steps.map((step, index) => (
               <div
-                key={`${step.number}-${index}`}
+                key={`how-it-works-step-${index}`}
                 className="space-y-2 rounded-[12px] border border-[var(--builder-border)] bg-[rgba(2,6,23,0.55)] p-3"
               >
                 <div className="grid gap-2 sm:grid-cols-[120px_1fr]">
@@ -1423,7 +1423,7 @@ export function BuilderEditorPanel({
           ) : null}
 
           {content.showcase.projects.map((project, index) => (
-            <div key={`${project.localizacao}-${index}`} className="rounded-[14px] border border-[var(--builder-border)] bg-[rgba(15,23,42,0.55)] p-3">
+            <div key={`showcase-project-${index}`} className="rounded-[14px] border border-[var(--builder-border)] bg-[rgba(15,23,42,0.55)] p-3">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-sm font-semibold text-[var(--builder-text-primary)]">Projeto {index + 1}</p>
                 <button

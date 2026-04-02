@@ -144,18 +144,22 @@ function resolveClientExportBuildConfig(
   content: Content,
   env: Record<string, string> | undefined,
 ): { basePath: string; domain: string } {
-  const envBasePath =
+  const contentBasePath = content.global.buildBasePath?.trim();
+  const envBasePathRaw =
     resolveRuntimeEnv(env, 'VITE_PROJECT_BASE_PATH') || resolveRuntimeEnv(env, 'PROJECT_BASE_PATH');
+  const envBasePath = envBasePathRaw?.trim() === '/' ? undefined : envBasePathRaw;
   const envDomain = normalizeExportDomain(
     resolveRuntimeEnv(env, 'VITE_PROJECT_DOMAIN') || resolveRuntimeEnv(env, 'PROJECT_DOMAIN'),
   );
+  const contentDomain =
+    normalizeExportDomain(content.global.siteUrl) ||
+    resolveDomainFromCanonical(content.seo.canonical, content.global.siteUrl);
 
   return {
-    basePath: normalizeExportBasePath(envBasePath || content.global.buildBasePath),
+    basePath: normalizeExportBasePath(contentBasePath || envBasePath),
     domain:
+      contentDomain ||
       envDomain ||
-      normalizeExportDomain(content.global.siteUrl) ||
-      resolveDomainFromCanonical(content.seo.canonical, content.global.siteUrl) ||
       DEFAULT_CLIENT_EXPORT_DOMAIN,
   };
 }

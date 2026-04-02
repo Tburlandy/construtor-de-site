@@ -1,10 +1,33 @@
-export const isValidWebhookUrl = (url?: string) =>
-  !!url && !url.includes("seu-webhook") && !url.includes("[[");
+const normalizeWebhookUrl = (url?: string): string | null => {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsedUrl = new URL(trimmed);
+    if (parsedUrl.pathname.length > 1) {
+      parsedUrl.pathname = parsedUrl.pathname.replace(/\/+$/, "");
+    }
+    parsedUrl.hash = "";
+    return parsedUrl.toString();
+  } catch {
+    return null;
+  }
+};
+
+export const isValidWebhookUrl = (url?: string) => {
+  const normalizedUrl = normalizeWebhookUrl(url);
+  return (
+    !!normalizedUrl &&
+    !normalizedUrl.includes("seu-webhook") &&
+    !normalizedUrl.includes("[[")
+  );
+};
 
 export const postWebhookForm = async (
   url: string,
   body: string,
-  timeoutMs = 5000,
+  timeoutMs = 8000,
 ): Promise<boolean> => {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
@@ -16,27 +39,10 @@ export const postWebhookForm = async (
       body,
       signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`Webhook falhou: ${res.status}`);
-    return true;
+    return res.ok;
   } catch (error) {
-    try {
-      if (navigator.sendBeacon) {
-        const blob = new Blob([body], {
-          type: "application/x-www-form-urlencoded",
-        });
-        const sent = navigator.sendBeacon(url, blob);
-        if (sent) return true;
-      }
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
-      });
-      return res.ok;
-    } catch (retryError) {
-      console.warn("Webhook falhou:", retryError);
-      return false;
-    }
+    console.warn("Webhook falhou:", error);
+    return false;
   } finally {
     clearTimeout(t);
   }
@@ -47,8 +53,15 @@ export const sendWebhookToUrls = async (
   body: string,
 ): Promise<boolean> => {
   if (!urls.length) return false;
+
+  const uniqueValidUrls = Array.from(
+    new Set(urls.map((url) => normalizeWebhookUrl(url)).filter(isValidWebhookUrl)),
+  );
+
+  if (!uniqueValidUrls.length) return false;
+
   const results = await Promise.allSettled(
-    urls.map((url) => postWebhookForm(url, body)),
+    uniqueValidUrls.map((url) => postWebhookForm(url, body)),
   );
   return results.some(
     (result) => result.status === "fulfilled" && result.value,

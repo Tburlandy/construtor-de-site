@@ -31,6 +31,9 @@ function StudioHomeRedirect() {
 
 function TrailingSlashRedirect() {
   const { pathname, search, hash } = useLocation();
+  if (pathname === '/index.html' || pathname === '/index.htm') {
+    return <Navigate to={`/${search}${hash}`} replace />;
+  }
   if (pathname !== '/' && pathname.endsWith('/')) {
     return <Navigate to={pathname.slice(0, -1) + search + hash} replace />;
   }

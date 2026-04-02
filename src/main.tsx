@@ -59,7 +59,7 @@ function createMinimalFallbackContent(): Content {
       title: brand,
       description: `${brand} em ${city}`,
       canonical: siteUrl,
-      ogImage: '/favicon.ico',
+      ogImage: '/hero-solar-panels.jpg',
       jsonLd: {},
     },
     hero: {

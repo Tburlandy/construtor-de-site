@@ -17,14 +17,35 @@ function normalizeBasePath(rawPath: string | undefined): string {
   return withLeadingSlash.endsWith("/") ? withLeadingSlash : `${withLeadingSlash}/`;
 }
 
+function resolveProjectBasePath(mode: string, env: Record<string, string>): string {
+  if (mode === "development") {
+    return "/";
+  }
+
+  const explicitFromShell =
+    process.env.VITE_PROJECT_BASE_PATH || process.env.PROJECT_BASE_PATH || process.env.BASE_PATH;
+  if (explicitFromShell?.trim()) {
+    if (explicitFromShell.trim() === "/") {
+      return DEFAULT_BASE_PATH;
+    }
+    return normalizeBasePath(explicitFromShell);
+  }
+
+  const configuredPath = env.VITE_PROJECT_BASE_PATH || env.PROJECT_BASE_PATH || env.BASE_PATH;
+  // Em produção, evita que config local com "/" force build para raiz por acidente.
+  if (!configuredPath || configuredPath.trim() === "/") {
+    return DEFAULT_BASE_PATH;
+  }
+
+  return normalizeBasePath(configuredPath);
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const projectId = (env.VITE_PROJECT_ID || env.PROJECT_ID || DEFAULT_PROJECT_ID).trim();
   const studioEnabled = mode === 'development' || env.VITE_STUDIO_ENABLED === 'true';
-  const projectBasePath = mode === 'development'
-    ? '/'
-    : normalizeBasePath(env.VITE_PROJECT_BASE_PATH || env.PROJECT_BASE_PATH || env.BASE_PATH);
+  const projectBasePath = resolveProjectBasePath(mode, env);
   const projectDomain = (env.VITE_PROJECT_DOMAIN || env.PROJECT_DOMAIN || "").trim();
 
   return {
