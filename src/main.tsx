@@ -1,47 +1,34 @@
-import { createRoot } from "react-dom/client";
-import App from "./App.tsx";
-import "./index.css";
-import contentJson from "../content/content.json";
+import { createRoot } from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
+import type { Content } from '@/content/schema';
+import { bootstrapRuntimeContent, setContentRuntimeOverride } from '@/lib/content';
 
 declare global {
   interface Window {
     __GTM_ID__?: string;
-    dataLayer: any[];
   }
 }
 
-const GTM_FALLBACK_ID = "GTM-XXXXXXX";
-const GTM_FETCH_TIMEOUT_MS = 1800;
-const rootElement = document.getElementById("root");
+const GTM_FALLBACK_ID = 'GTM-XXXXXXX';
+const rootElement = document.getElementById('root');
 
 if (!rootElement) {
   throw new Error('Elemento raiz "#root" não encontrado.');
 }
 
-createRoot(rootElement).render(<App />);
-
-function getContentApiCandidates(): string[] {
-  const base = import.meta.env.BASE_URL || "/";
-  const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
-  const candidates = [
-    "/api/content",
-    `${normalizedBase}/api/content`,
-  ];
-  return [...new Set(candidates)];
-}
-
 function getGtmIdFromPayload(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") {
+  if (!payload || typeof payload !== 'object') {
     return null;
   }
 
   const maybeGlobal = (payload as { global?: unknown }).global;
-  if (!maybeGlobal || typeof maybeGlobal !== "object") {
+  if (!maybeGlobal || typeof maybeGlobal !== 'object') {
     return null;
   }
 
   const maybeGtmId = (maybeGlobal as { gtmId?: unknown }).gtmId;
-  if (typeof maybeGtmId !== "string") {
+  if (typeof maybeGtmId !== 'string') {
     return null;
   }
 
@@ -49,51 +36,43 @@ function getGtmIdFromPayload(payload: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function getGtmIdFromStaticContent(): string | null {
-  return getGtmIdFromPayload(contentJson);
-}
+function createMinimalFallbackContent(): Content {
+  const brand = import.meta.env.VITE_BRAND_NAME || 'EFITEC SOLAR';
+  const city = import.meta.env.VITE_CITY || 'Rio de Janeiro - RJ';
+  const whatsappE164 = import.meta.env.VITE_WPP_E164 || '5521999999999';
+  const siteUrl =
+    import.meta.env.VITE_PROJECT_DOMAIN ||
+    import.meta.env.VITE_SITE_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : 'https://www.efitecsolar.com');
 
-async function tryReadGtmIdFromEndpoint(endpoint: string): Promise<string | null> {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), GTM_FETCH_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(endpoint, { signal: controller.signal });
-    if (!response.ok) {
-      return null;
-    }
-    const payload = (await response.json()) as unknown;
-    return getGtmIdFromPayload(payload);
-  } catch {
-    return null;
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
-async function resolveGtmId(): Promise<string> {
-  const envGtm = import.meta.env.VITE_GTM_ID?.trim();
-  if (envGtm) {
-    return envGtm;
-  }
-
-  const staticGtm = getGtmIdFromStaticContent();
-  if (staticGtm) {
-    return staticGtm;
-  }
-
-  const shouldTryApi = __STUDIO_ENABLED__;
-  if (!shouldTryApi) {
-    return GTM_FALLBACK_ID;
-  }
-
-  for (const endpoint of getContentApiCandidates()) {
-    const endpointGtmId = await tryReadGtmIdFromEndpoint(endpoint);
-    if (endpointGtmId) {
-      return endpointGtmId;
-    }
-  }
-  return GTM_FALLBACK_ID;
+  return {
+    global: {
+      brand,
+      city,
+      whatsappE164,
+      cnpj: '00.000.000/0001-00',
+      address: 'Endereço indisponível',
+      siteUrl,
+      gtmId: '',
+    },
+    seo: {
+      title: brand,
+      description: `${brand} em ${city}`,
+      canonical: siteUrl,
+      ogImage: '/favicon.ico',
+      jsonLd: {},
+    },
+    hero: {
+      headline: brand,
+      subheadline: 'Conteúdo temporariamente indisponível.',
+      ctaLabel: 'Solicitar orçamento',
+      background: '/hero-solar-panels.jpg',
+    },
+    benefits: [],
+    showcase: {
+      projects: [],
+    },
+  };
 }
 
 function injectGtm(gtmId: string) {
@@ -106,34 +85,53 @@ function injectGtm(gtmId: string) {
     return;
   }
 
-  window.dataLayer = window.dataLayer || [];
-  window.dataLayer.push({
-    "gtm.start": new Date().getTime(),
-    event: "gtm.js",
+  const analyticsWindow = window as typeof window & {
+    dataLayer?: Array<Record<string, unknown>>;
+  };
+  analyticsWindow.dataLayer = analyticsWindow.dataLayer || [];
+  analyticsWindow.dataLayer.push({
+    'gtm.start': new Date().getTime(),
+    event: 'gtm.js',
   });
 
-  const script = document.createElement("script");
+  const script = document.createElement('script');
   script.async = true;
   script.src = `https://www.googletagmanager.com/gtm.js?id=${gtmId}`;
   script.dataset.gtmId = gtmId;
   document.head.appendChild(script);
 
   if (!document.querySelector(`iframe[data-gtm-noscript="${gtmId}"]`)) {
-    const noscript = document.createElement("noscript");
-    const iframe = document.createElement("iframe");
+    const noscript = document.createElement('noscript');
+    const iframe = document.createElement('iframe');
     iframe.src = `https://www.googletagmanager.com/ns.html?id=${gtmId}`;
-    iframe.height = "0";
-    iframe.width = "0";
-    iframe.style.display = "none";
-    iframe.style.visibility = "hidden";
+    iframe.height = '0';
+    iframe.width = '0';
+    iframe.style.display = 'none';
+    iframe.style.visibility = 'hidden';
     iframe.dataset.gtmNoscript = gtmId;
     noscript.appendChild(iframe);
     document.body.insertBefore(noscript, document.body.firstChild);
   }
 }
 
-void (async () => {
-  const gtmId = await resolveGtmId();
+async function bootstrapApplication() {
+  let gtmId = import.meta.env.VITE_GTM_ID?.trim() || '';
+
+  try {
+    const content = await bootstrapRuntimeContent();
+    gtmId = gtmId || getGtmIdFromPayload(content) || '';
+  } catch (error) {
+    console.error('[app-bootstrap] Falha ao inicializar conteúdo em runtime:', error);
+    setContentRuntimeOverride(createMinimalFallbackContent());
+  }
+
+  if (!gtmId) {
+    gtmId = GTM_FALLBACK_ID;
+  }
+
   window.__GTM_ID__ = gtmId;
   injectGtm(gtmId);
-})();
+  createRoot(rootElement).render(<App />);
+}
+
+void bootstrapApplication();

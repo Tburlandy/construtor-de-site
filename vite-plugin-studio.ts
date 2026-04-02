@@ -55,6 +55,8 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const DEFAULT_CLIENT_EXPORT_BASE_PATH = '/pagina/';
+const DEFAULT_CLIENT_EXPORT_DOMAIN = 'https://www.efitecsolar.com';
 
 function parseProjectIdOrThrow(projectIdRaw: string): ProjectId {
   try {
@@ -72,6 +74,67 @@ function parseProjectIdOrThrow(projectIdRaw: string): ProjectId {
 async function readLegacyContent(contentPath: string): Promise<Content> {
   const raw = await fs.readFile(contentPath, 'utf-8');
   return parseGlobalSiteContentJson(JSON.parse(raw));
+}
+
+function normalizeExportBasePath(rawPath: string | undefined): string {
+  const trimmed = rawPath?.trim();
+  if (!trimmed) {
+    return DEFAULT_CLIENT_EXPORT_BASE_PATH;
+  }
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
+}
+
+function normalizeExportDomain(rawDomain: string | undefined): string | null {
+  const trimmed = rawDomain?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(withProtocol).origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveDomainFromCanonical(canonical: string | undefined, siteUrl: string): string | null {
+  const canonicalTrimmed = canonical?.trim();
+  if (!canonicalTrimmed) {
+    return null;
+  }
+
+  try {
+    return new URL(canonicalTrimmed).origin;
+  } catch {
+    // tenta resolver canonical relativa com base no siteUrl.
+  }
+
+  const normalizedSiteUrl = normalizeExportDomain(siteUrl);
+  if (!normalizedSiteUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(canonicalTrimmed, normalizedSiteUrl).origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveClientExportBuildConfig(content: Content): { basePath: string; domain: string } {
+  const envBasePath = process.env.VITE_PROJECT_BASE_PATH || process.env.PROJECT_BASE_PATH;
+  const envDomain = normalizeExportDomain(process.env.VITE_PROJECT_DOMAIN || process.env.PROJECT_DOMAIN);
+
+  return {
+    basePath: normalizeExportBasePath(envBasePath || content.global.buildBasePath),
+    domain:
+      envDomain ||
+      normalizeExportDomain(content.global.siteUrl) ||
+      resolveDomainFromCanonical(content.seo.canonical, content.global.siteUrl) ||
+      DEFAULT_CLIENT_EXPORT_DOMAIN,
+  };
 }
 
 function getProjectMediaDirectory(
@@ -321,7 +384,19 @@ export function studioPlugin(): Plugin {
           }
 
           if (req.method === 'POST' && segments.length === 2 && segments[1] === 'export-zip') {
-            const result = await exportClientZip(segments[0]);
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Cliente não encontrado' });
+            }
+
+            const content = await loadProjectScopedContent(projectId);
+            const buildConfig = resolveClientExportBuildConfig(content);
+            const result = await exportClientZip({
+              clientIdRaw: projectId,
+              content,
+              buildConfig,
+            });
             return sendJson(201, {
               clientId: result.clientId,
               buildPath: result.buildPath,
@@ -647,7 +722,19 @@ export function studioPlugin(): Plugin {
           }
 
           if (req.method === 'POST' && segments.length === 2 && segments[1] === 'export-zip') {
-            const result = await exportClientZip(segments[0]);
+            const projectId = parseProjectIdOrThrow(segments[0]);
+            const project = await projectMetadataRepository.getByProjectId(projectId);
+            if (!project) {
+              return sendJson(404, { error: 'Cliente não encontrado' });
+            }
+
+            const content = await loadProjectScopedContent(projectId);
+            const buildConfig = resolveClientExportBuildConfig(content);
+            const result = await exportClientZip({
+              clientIdRaw: projectId,
+              content,
+              buildConfig,
+            });
             return sendJson(201, {
               clientId: result.clientId,
               buildPath: result.buildPath,

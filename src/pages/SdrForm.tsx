@@ -216,16 +216,8 @@ const SdrForm = () => {
       }
 
       toast({
-        title: (
-          <span className="text-lg font-semibold text-emerald-200">
-            Cadastro enviado
-          </span>
-        ),
-        description: (
-          <span className="text-base text-emerald-100">
-            Os dados foram registrados com sucesso.
-          </span>
-        ),
+        title: "Cadastro enviado",
+        description: "Os dados foram registrados com sucesso.",
         className: "border-emerald-500/30 bg-emerald-500/15",
       });
 

@@ -61,10 +61,6 @@ import {
   getLatestClientExport,
   listClientExports,
 } from './src/platform/studio/clientExportService.js';
-import {
-  ExportJobError,
-  createExportJobRepository,
-} from './src/platform/studio/exportJobService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -80,7 +76,8 @@ const supabaseClient = supabaseStudio?.client ?? null;
 const supabaseStorageBucket = supabaseStudio?.storageBucket ?? null;
 const supabaseExportsBucket = process.env.SUPABASE_EXPORTS_BUCKET || 'studio-exports';
 const hasSupabasePersistence = Boolean(supabaseClient);
-const exportJobRepository = createExportJobRepository({ supabaseClient });
+const DEFAULT_CLIENT_EXPORT_BASE_PATH = '/pagina/';
+const DEFAULT_CLIENT_EXPORT_DOMAIN = 'https://www.efitecsolar.com';
 
 /** Instância alinhada ao layout da ADR; rotas HTTP em cards F2+. */
 export const projectMetadataRepository = supabaseClient
@@ -256,10 +253,6 @@ async function cleanupProjectArtifacts(projectId: ProjectId): Promise<void> {
 }
 
 function sendClientExportError(res: Response, error: unknown) {
-  if (error instanceof ExportJobError) {
-    res.status(error.statusCode).json({ error: error.message });
-    return;
-  }
   if (error instanceof ClientExportError) {
     res.status(error.statusCode).json({
       error: error.message,
@@ -271,91 +264,83 @@ function sendClientExportError(res: Response, error: unknown) {
   res.status(500).json({ error: 'Erro ao exportar ZIP do cliente' });
 }
 
-function shouldUseAsyncExportPipeline(): boolean {
-  const enabledFlag = (process.env.EXPORT_PIPELINE_ENABLED || '').trim().toLowerCase();
-  return Boolean(
-    supabaseClient &&
-      enabledFlag === 'true' &&
-      process.env.NODE_ENV !== 'test',
-  );
+function normalizeExportBasePath(rawPath: string | undefined): string {
+  const trimmed = rawPath?.trim();
+  if (!trimmed) {
+    return DEFAULT_CLIENT_EXPORT_BASE_PATH;
+  }
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
 }
 
-function buildExportJobDownloadUrl(projectId: string, jobId: string): string {
-  return `/api/clients/${encodeURIComponent(projectId)}/export-jobs/${encodeURIComponent(jobId)}/download`;
+function normalizeExportDomain(rawDomain: string | undefined): string | null {
+  const trimmed = rawDomain?.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(withProtocol).origin;
+  } catch {
+    return null;
+  }
 }
 
-function buildExportJobPayload(projectId: string, job: {
-  jobId: string;
-  status: 'queued' | 'running' | 'success' | 'failed';
-  createdAt: string;
-  updatedAt: string;
-  startedAt?: string;
-  finishedAt?: string;
-  artifactFileName?: string;
-  artifactStoragePath?: string;
-  artifactSizeBytes?: number;
-  errorMessage?: string;
-}) {
+function resolveDomainFromCanonical(canonical: string | undefined, siteUrl: string): string | null {
+  const canonicalTrimmed = canonical?.trim();
+  if (!canonicalTrimmed) {
+    return null;
+  }
+
+  try {
+    return new URL(canonicalTrimmed).origin;
+  } catch {
+    // tenta resolver canonical relativa com base no siteUrl.
+  }
+
+  const normalizedSiteUrl = normalizeExportDomain(siteUrl);
+  if (!normalizedSiteUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(canonicalTrimmed, normalizedSiteUrl).origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveClientExportBuildConfig(content: Content): { basePath: string; domain: string } {
+  const envBasePath = process.env.VITE_PROJECT_BASE_PATH || process.env.PROJECT_BASE_PATH;
+  const envDomain = normalizeExportDomain(process.env.VITE_PROJECT_DOMAIN || process.env.PROJECT_DOMAIN);
+
   return {
-    ...job,
-    clientId: projectId,
-    downloadUrl:
-      job.status === 'success' && job.artifactStoragePath
-        ? buildExportJobDownloadUrl(projectId, job.jobId)
-        : null,
+    basePath: normalizeExportBasePath(envBasePath || content.global.buildBasePath),
+    domain:
+      envDomain ||
+      normalizeExportDomain(content.global.siteUrl) ||
+      resolveDomainFromCanonical(content.seo.canonical, content.global.siteUrl) ||
+      DEFAULT_CLIENT_EXPORT_DOMAIN,
   };
 }
 
-async function triggerExportJobRunner(params: { projectId: string; jobId: string }): Promise<void> {
-  const token = (process.env.GITHUB_TOKEN || '').trim();
-  const workflowFile = (process.env.EXPORT_WORKFLOW_FILE || 'process-export-jobs.yml').trim();
-  const workflowRef = (process.env.EXPORT_WORKFLOW_REF || 'main').trim();
-  const owner = (process.env.EXPORT_WORKFLOW_OWNER || process.env.VERCEL_GIT_REPO_OWNER || '').trim();
-  const repo = (process.env.EXPORT_WORKFLOW_REPO || process.env.VERCEL_GIT_REPO_SLUG || '').trim();
-
-  if (!token || !owner || !repo) {
-    return;
+async function runSynchronousClientZipExport(clientIdRaw: string) {
+  const clientId = parseProjectIdOrThrow(clientIdRaw);
+  const project = await projectMetadataRepository.getByProjectId(clientId);
+  if (!project) {
+    throw new ProjectsApiError(404, 'Cliente não encontrado');
   }
 
-  const workflowCandidates = [workflowFile, `.github/workflows/${workflowFile}`];
-  let lastError: string | null = null;
-
-  for (const candidate of workflowCandidates) {
-    const response = await fetch(
-      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(candidate)}/dispatches`,
-      {
-        method: 'POST',
-        headers: {
-          Accept: 'application/vnd.github+json',
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'User-Agent': 'construtor-export-orchestrator',
-        },
-        body: JSON.stringify({
-          ref: workflowRef,
-          inputs: {
-            projectId: params.projectId,
-            jobId: params.jobId,
-          },
-        }),
-      },
-    );
-
-    if (response.ok) {
-      return;
-    }
-
-    const body = await response.text().catch(() => '');
-    lastError = `workflow=${candidate} status=${response.status}${body ? ` body=${body}` : ''}`;
-    if (response.status !== 404) {
-      break;
-    }
-  }
-
-  if (lastError) {
-    throw new Error(`Falha ao disparar workflow de exportação: ${lastError}`);
-  }
+  const content = await loadProjectScopedContent(clientId);
+  const buildConfig = resolveClientExportBuildConfig(content);
+  return exportClientZip({
+    clientIdRaw: clientId,
+    content,
+    buildConfig,
+    supabaseClient,
+    exportsBucket: supabaseExportsBucket,
+  });
 }
 
 // Garantir que diretórios existem
@@ -880,93 +865,16 @@ app.delete('/api/clients/:clientId', async (req, res) => {
   }
 });
 
-async function handleExportZipRequest(clientIdRaw: string, res: Response) {
-  if (!shouldUseAsyncExportPipeline()) {
-    const result = await exportClientZip(clientIdRaw);
+// POST /api/clients/:clientId/export-zip — exportação síncrona via template prebuildado
+app.post('/api/clients/:clientId/export-zip', async (req, res) => {
+  try {
+    const result = await runSynchronousClientZipExport(req.params.clientId);
     res.status(201).json({
       clientId: result.clientId,
       buildPath: result.buildPath,
       buildConfig: result.buildConfig,
       zip: enrichClientExportWithDownloadUrl(result.zip),
     });
-    return;
-  }
-
-  const clientId = parseProjectIdOrThrow(clientIdRaw);
-  const project = await projectMetadataRepository.getByProjectId(clientId);
-  if (!project) {
-    throw new ProjectsApiError(404, 'Cliente não encontrado');
-  }
-
-  const queuedJob = await exportJobRepository.createQueued({ projectId: clientId });
-  try {
-    await triggerExportJobRunner({ projectId: clientId, jobId: queuedJob.jobId });
-  } catch (error) {
-    console.error('Falha ao disparar workflow de exportação (seguirá por agendamento):', error);
-  }
-
-  res.status(202).json({
-    queued: true,
-    job: buildExportJobPayload(clientId, queuedJob),
-  });
-}
-
-// POST /api/clients/:clientId/export-zip — enfileira exportação assíncrona (ou fallback local)
-app.post('/api/clients/:clientId/export-zip', async (req, res) => {
-  try {
-    await handleExportZipRequest(req.params.clientId, res);
-  } catch (error) {
-    sendClientExportError(res, error);
-  }
-});
-
-// GET /api/clients/:clientId/export-jobs/latest — último job de exportação
-app.get('/api/clients/:clientId/export-jobs/latest', async (req, res) => {
-  try {
-    const clientId = parseProjectIdOrThrow(req.params.clientId);
-    const job = await exportJobRepository.getLatestByProjectId(clientId);
-    if (!job) {
-      return res.status(404).json({ error: 'Nenhum job de exportação encontrado para este cliente.' });
-    }
-    res.json(buildExportJobPayload(clientId, job));
-  } catch (error) {
-    sendClientExportError(res, error);
-  }
-});
-
-// GET /api/clients/:clientId/export-jobs/:jobId — status de job específico
-app.get('/api/clients/:clientId/export-jobs/:jobId', async (req, res) => {
-  try {
-    const clientId = parseProjectIdOrThrow(req.params.clientId);
-    const job = await exportJobRepository.getByProjectIdAndJobId(clientId, req.params.jobId);
-    if (!job) {
-      return res.status(404).json({ error: 'Job de exportação não encontrado.' });
-    }
-    res.json(buildExportJobPayload(clientId, job));
-  } catch (error) {
-    sendClientExportError(res, error);
-  }
-});
-
-// GET /api/clients/:clientId/export-jobs/:jobId/download — download do artefato do job
-app.get('/api/clients/:clientId/export-jobs/:jobId/download', async (req, res) => {
-  try {
-    if (!supabaseClient) {
-      return res.status(400).json({ error: 'Download remoto indisponível sem Supabase configurado.' });
-    }
-    const clientId = parseProjectIdOrThrow(req.params.clientId);
-    const job = await exportJobRepository.getByProjectIdAndJobId(clientId, req.params.jobId);
-    if (!job || job.status !== 'success' || !job.artifactStoragePath) {
-      return res.status(404).json({ error: 'Artefato de exportação não encontrado para este job.' });
-    }
-
-    const { data, error } = await supabaseClient.storage
-      .from(supabaseExportsBucket)
-      .createSignedUrl(job.artifactStoragePath, 60 * 10);
-    if (error || !data?.signedUrl) {
-      throw error || new Error('Não foi possível gerar URL assinada para download.');
-    }
-    res.redirect(data.signedUrl);
   } catch (error) {
     sendClientExportError(res, error);
   }
@@ -985,10 +893,6 @@ app.get('/api/clients/:clientId/exports', async (req, res) => {
 // GET /api/clients/:clientId/exports/latest — retorna metadado do ZIP mais recente
 app.get('/api/clients/:clientId/exports/latest', async (req, res) => {
   try {
-    const asyncJob = await exportJobRepository.getLatestByProjectId(req.params.clientId);
-    if (asyncJob && asyncJob.status === 'success' && asyncJob.artifactStoragePath) {
-      return res.json(buildExportJobPayload(req.params.clientId, asyncJob));
-    }
     const item = await getLatestClientExport(req.params.clientId);
     if (!item) {
       return res.status(404).json({ error: 'Nenhum ZIP de exportação disponível para este cliente.' });
@@ -1012,56 +916,13 @@ app.get('/api/clients/:clientId/exports/:fileName/download', async (req, res) =>
 // Compatibilidade: mesma exportação usando namespace legado `/api/projects`.
 app.post('/api/projects/:projectId/export-zip', async (req, res) => {
   try {
-    await handleExportZipRequest(req.params.projectId, res);
-  } catch (error) {
-    sendClientExportError(res, error);
-  }
-});
-
-app.get('/api/projects/:projectId/export-jobs/latest', async (req, res) => {
-  try {
-    const projectId = parseProjectIdOrThrow(req.params.projectId);
-    const job = await exportJobRepository.getLatestByProjectId(projectId);
-    if (!job) {
-      return res.status(404).json({ error: 'Nenhum job de exportação encontrado para este projeto.' });
-    }
-    res.json(buildExportJobPayload(projectId, job));
-  } catch (error) {
-    sendClientExportError(res, error);
-  }
-});
-
-app.get('/api/projects/:projectId/export-jobs/:jobId', async (req, res) => {
-  try {
-    const projectId = parseProjectIdOrThrow(req.params.projectId);
-    const job = await exportJobRepository.getByProjectIdAndJobId(projectId, req.params.jobId);
-    if (!job) {
-      return res.status(404).json({ error: 'Job de exportação não encontrado.' });
-    }
-    res.json(buildExportJobPayload(projectId, job));
-  } catch (error) {
-    sendClientExportError(res, error);
-  }
-});
-
-app.get('/api/projects/:projectId/export-jobs/:jobId/download', async (req, res) => {
-  try {
-    if (!supabaseClient) {
-      return res.status(400).json({ error: 'Download remoto indisponível sem Supabase configurado.' });
-    }
-    const projectId = parseProjectIdOrThrow(req.params.projectId);
-    const job = await exportJobRepository.getByProjectIdAndJobId(projectId, req.params.jobId);
-    if (!job || job.status !== 'success' || !job.artifactStoragePath) {
-      return res.status(404).json({ error: 'Artefato de exportação não encontrado para este job.' });
-    }
-
-    const { data, error } = await supabaseClient.storage
-      .from(supabaseExportsBucket)
-      .createSignedUrl(job.artifactStoragePath, 60 * 10);
-    if (error || !data?.signedUrl) {
-      throw error || new Error('Não foi possível gerar URL assinada para download.');
-    }
-    res.redirect(data.signedUrl);
+    const result = await runSynchronousClientZipExport(req.params.projectId);
+    res.status(201).json({
+      clientId: result.clientId,
+      buildPath: result.buildPath,
+      buildConfig: result.buildConfig,
+      zip: enrichClientExportWithDownloadUrl(result.zip),
+    });
   } catch (error) {
     sendClientExportError(res, error);
   }
@@ -1078,10 +939,6 @@ app.get('/api/projects/:projectId/exports', async (req, res) => {
 
 app.get('/api/projects/:projectId/exports/latest', async (req, res) => {
   try {
-    const asyncJob = await exportJobRepository.getLatestByProjectId(req.params.projectId);
-    if (asyncJob && asyncJob.status === 'success' && asyncJob.artifactStoragePath) {
-      return res.json(buildExportJobPayload(req.params.projectId, asyncJob));
-    }
     const item = await getLatestClientExport(req.params.projectId);
     if (!item) {
       return res.status(404).json({ error: 'Nenhum ZIP de exportação disponível para este cliente.' });
@@ -1223,9 +1080,10 @@ app.put('/api/content', async (req, res) => {
     const content = ContentSchema.parse(req.body);
     await fs.writeFile(contentPath, JSON.stringify(content, null, 2), 'utf-8');
     res.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Erro ao salvar conteúdo:', error);
-    res.status(400).json({ error: error.message || 'Erro ao validar conteúdo' });
+    const message = error instanceof Error && error.message ? error.message : 'Erro ao validar conteúdo';
+    res.status(400).json({ error: message });
   }
 });
 
@@ -1391,7 +1249,7 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
       url: `/media/img/${filename}`,
       filename,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Erro ao processar imagem:', error);
     // Limpa arquivo temporário em caso de erro
     try {
@@ -1431,7 +1289,7 @@ app.post('/api/upload-video', upload.single('video'), async (req, res) => {
       filename: `${filename}${ext}`,
       poster: `/media/img/${posterFilename}`, // Pode estar vazio se não gerar
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Erro ao processar vídeo:', error);
     try {
       await fs.unlink(req.file.path);

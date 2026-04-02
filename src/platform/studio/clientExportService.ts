@@ -1,19 +1,54 @@
-import { spawn } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import archiver from 'archiver';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { ProjectSchema, type ProjectId } from '../contracts/index.js';
 
 const DEFAULT_BASE_PATH = '/pagina/';
 const DEFAULT_DOMAIN = 'https://www.efitecsolar.com';
+const DEFAULT_EXPORTS_BUCKET = 'studio-exports';
 const REPO_ROOT = path.resolve('.');
-const DATA_PROJECTS_ROOT = path.join(REPO_ROOT, 'data', 'projects');
-const LEGACY_CONTENT_PATH = path.join(REPO_ROOT, 'content', 'content.json');
+const TEMPLATE_ROOT = path.join(REPO_ROOT, '.export-template', 'current');
+const TEMPLATE_SITE_ROOT = path.join(TEMPLATE_ROOT, 'site');
+const TEMPLATE_METADATA_PATH = path.join(TEMPLATE_ROOT, 'metadata.json');
 const IS_SERVERLESS_RUNTIME = Boolean(process.env.VERCEL);
 const WORK_ROOT = IS_SERVERLESS_RUNTIME ? path.join(os.tmpdir(), 'studio-export-runtime') : REPO_ROOT;
 const ARTIFACTS_ROOT = path.join(WORK_ROOT, 'artifacts', 'clients');
+const TEMP_WORKSPACES_ROOT = path.join(WORK_ROOT, '.tmp', 'export-workspaces');
 
-type JsonLike = Record<string, unknown>;
+const TEXT_FILE_EXTENSIONS = new Set([
+  '.html',
+  '.css',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.json',
+  '.txt',
+  '.xml',
+  '.svg',
+  '.map',
+]);
+
+const TEXT_FILE_BASENAMES = new Set(['.htaccess', 'robots.txt', 'sitemap.xml']);
+
+type TemplateMetadata = {
+  basePathPlaceholder: string;
+};
+
+type SupabaseUploadResult = {
+  storagePath: string;
+  downloadUrl?: string;
+};
+
+type NormalizedExportClientZipParams = {
+  clientId: ProjectId;
+  content: unknown;
+  buildConfig: ClientExportBuildConfig;
+  supabaseClient: SupabaseClient | null;
+  exportsBucket: string;
+};
 
 export class ClientExportError extends Error {
   readonly statusCode: number;
@@ -36,14 +71,42 @@ export type ClientExportZipArtifact = {
   clientId: ProjectId;
   fileName: string;
   absolutePath: string;
+  storagePath?: string;
   sizeInBytes: number;
   createdAt: string;
+  downloadUrl?: string;
+};
+
+type ClientExportZipArtifactLike = {
+  clientId: ProjectId;
+  fileName: string;
+  absolutePath?: string;
+  storagePath?: string;
+  sizeInBytes: number;
+  createdAt: string;
+  downloadUrl?: string;
+};
+
+export type ExportClientZipParams = {
+  clientIdRaw: string;
+  content: unknown;
+  buildConfig: ClientExportBuildConfig;
+  supabaseClient?: SupabaseClient | null;
+  exportsBucket?: string;
 };
 
 export type ExportClientZipResult = {
   clientId: ProjectId;
   buildPath: string;
-  zip: ClientExportZipArtifact;
+  zip: {
+    clientId: ProjectId;
+    fileName: string;
+    absolutePath?: string;
+    storagePath?: string;
+    sizeInBytes: number;
+    createdAt: string;
+    downloadUrl?: string;
+  };
   buildConfig: ClientExportBuildConfig;
 };
 
@@ -69,243 +132,13 @@ function normalizeDomain(rawDomain: string | undefined): string | null {
   if (!trimmed) {
     return null;
   }
+
   try {
-    const url = new URL(trimmed);
-    return url.origin;
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    return new URL(withProtocol).origin;
   } catch {
     return null;
   }
-}
-
-function maybeRecord(value: unknown): JsonLike | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-  return value as JsonLike;
-}
-
-function normalizeGtmId(rawValue: unknown): string | null {
-  if (typeof rawValue !== 'string') {
-    return null;
-  }
-  const trimmed = rawValue.trim();
-  if (!trimmed) {
-    return null;
-  }
-  if (!/^[A-Za-z0-9_-]+$/.test(trimmed)) {
-    return null;
-  }
-  return trimmed;
-}
-
-async function readJsonIfExists(filePath: string): Promise<unknown | null> {
-  try {
-    const raw = await fs.readFile(filePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') {
-        return null;
-      }
-    }
-    throw error;
-  }
-}
-
-async function resolveClientBuildBasePath(clientId: ProjectId): Promise<string> {
-  const envBasePath = process.env.VITE_PROJECT_BASE_PATH || process.env.PROJECT_BASE_PATH;
-  if (typeof envBasePath === 'string' && envBasePath.trim()) {
-    return normalizeBasePath(envBasePath);
-  }
-
-  const contentPath = path.join(DATA_PROJECTS_ROOT, clientId, 'content.json');
-  const contentRecord = maybeRecord(await readJsonIfExists(contentPath));
-  const content = maybeRecord(contentRecord?.content);
-  const global = maybeRecord(content?.global);
-  const configuredBasePath =
-    typeof global?.buildBasePath === 'string' ? global.buildBasePath : undefined;
-  if (configuredBasePath?.trim()) {
-    return normalizeBasePath(configuredBasePath);
-  }
-
-  const legacyContent = maybeRecord(await readJsonIfExists(LEGACY_CONTENT_PATH));
-  const legacyGlobal = maybeRecord(legacyContent?.global);
-  const legacyConfiguredBasePath =
-    typeof legacyGlobal?.buildBasePath === 'string' ? legacyGlobal.buildBasePath : undefined;
-  if (legacyConfiguredBasePath?.trim()) {
-    return normalizeBasePath(legacyConfiguredBasePath);
-  }
-
-  return DEFAULT_BASE_PATH;
-}
-
-function resolveDomainFromCanonical(canonical: string | undefined, siteUrl?: string): string | null {
-  const canonicalTrimmed = canonical?.trim();
-  if (!canonicalTrimmed) {
-    return null;
-  }
-
-  try {
-    return new URL(canonicalTrimmed).origin;
-  } catch {
-    // noop: tentamos com siteUrl abaixo.
-  }
-
-  const siteUrlNormalized = normalizeDomain(siteUrl);
-  if (!siteUrlNormalized) {
-    return null;
-  }
-
-  try {
-    return new URL(canonicalTrimmed, siteUrlNormalized).origin;
-  } catch {
-    return null;
-  }
-}
-
-async function resolveClientBuildDomain(clientId: ProjectId): Promise<string> {
-  const envDomain = normalizeDomain(process.env.VITE_PROJECT_DOMAIN || process.env.PROJECT_DOMAIN);
-  if (envDomain) {
-    return envDomain;
-  }
-
-  const seoPath = path.join(DATA_PROJECTS_ROOT, clientId, 'seo.json');
-  const seo = maybeRecord(await readJsonIfExists(seoPath));
-  const seoCanonical = typeof seo?.canonical === 'string' ? seo.canonical : undefined;
-  const seoDomain = resolveDomainFromCanonical(seoCanonical);
-  if (seoDomain) {
-    return seoDomain;
-  }
-
-  const contentPath = path.join(DATA_PROJECTS_ROOT, clientId, 'content.json');
-  const contentRecord = maybeRecord(await readJsonIfExists(contentPath));
-  const content = maybeRecord(contentRecord?.content);
-  const global = maybeRecord(content?.global);
-  const contentSeo = maybeRecord(content?.seo);
-  const siteUrl = typeof global?.siteUrl === 'string' ? global.siteUrl : undefined;
-  const contentCanonical = typeof contentSeo?.canonical === 'string' ? contentSeo.canonical : undefined;
-
-  const domainFromSiteUrl = normalizeDomain(siteUrl);
-  if (domainFromSiteUrl) {
-    return domainFromSiteUrl;
-  }
-
-  const domainFromContentCanonical = resolveDomainFromCanonical(contentCanonical, siteUrl);
-  if (domainFromContentCanonical) {
-    return domainFromContentCanonical;
-  }
-
-  return DEFAULT_DOMAIN;
-}
-
-async function resolveBuildConfig(clientId: ProjectId): Promise<ClientExportBuildConfig> {
-  const [basePath, domain] = await Promise.all([
-    resolveClientBuildBasePath(clientId),
-    resolveClientBuildDomain(clientId),
-  ]);
-  return { basePath, domain };
-}
-
-async function resolveClientGtmId(clientId: ProjectId): Promise<string | null> {
-  const contentPath = path.join(DATA_PROJECTS_ROOT, clientId, 'content.json');
-  const contentRecord = maybeRecord(await readJsonIfExists(contentPath));
-  const content = maybeRecord(contentRecord?.content);
-  const global = maybeRecord(content?.global);
-  const projectGtmId = normalizeGtmId(global?.gtmId);
-  if (projectGtmId) {
-    return projectGtmId;
-  }
-
-  const legacyContent = maybeRecord(await readJsonIfExists(LEGACY_CONTENT_PATH));
-  const legacyGlobal = maybeRecord(legacyContent?.global);
-  return normalizeGtmId(legacyGlobal?.gtmId);
-}
-
-async function hardcodeClientGtmIntoDistIndex(clientId: ProjectId, distRoot: string): Promise<void> {
-  const gtmId = await resolveClientGtmId(clientId);
-  if (!gtmId) {
-    return;
-  }
-
-  const indexPath = path.join(distRoot, 'index.html');
-  const rawIndexHtml = await fs.readFile(indexPath, 'utf-8');
-  const withoutPreviousMarkers = rawIndexHtml
-    .replace(/<!-- CLIENT ZIP GTM HEAD START -->[\s\S]*?<!-- CLIENT ZIP GTM HEAD END -->\s*/g, '')
-    .replace(/<!-- CLIENT ZIP GTM BODY START -->[\s\S]*?<!-- CLIENT ZIP GTM BODY END -->\s*/g, '');
-
-  const headInjection = [
-    '    <!-- CLIENT ZIP GTM HEAD START -->',
-    `    <script async src="https://www.googletagmanager.com/gtm.js?id=${gtmId}" data-gtm-id="${gtmId}"></script>`,
-    '    <!-- CLIENT ZIP GTM HEAD END -->',
-    '',
-  ].join('\n');
-  const bodyInjection = [
-    '    <!-- CLIENT ZIP GTM BODY START -->',
-    `    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=${gtmId}" height="0" width="0" style="display:none;visibility:hidden" data-gtm-noscript="${gtmId}"></iframe></noscript>`,
-    '    <!-- CLIENT ZIP GTM BODY END -->',
-    '',
-  ].join('\n');
-
-  const withHead = withoutPreviousMarkers.replace('</head>', `${headInjection}</head>`);
-  const withBody = withHead.replace(/<body([^>]*)>\s*/i, `<body$1>\n${bodyInjection}`);
-  await fs.writeFile(indexPath, withBody, 'utf-8');
-}
-
-type RunCommandOptions = {
-  cwd?: string;
-  env?: NodeJS.ProcessEnv;
-};
-
-async function runCommand(command: string, args: string[], options: RunCommandOptions = {}) {
-  const { cwd, env } = options;
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stderr = '';
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(
-        new Error(
-          stderr.trim() || `Comando falhou (${command} ${args.join(' ')}), código de saída ${code}.`,
-        ),
-      );
-    });
-  });
-}
-
-async function copyBuildSideFiles(params: { workspaceRoot: string; distRoot: string }) {
-  await fs
-    .copyFile(path.join(params.workspaceRoot, 'public', '.htaccess'), path.join(params.distRoot, '.htaccess'))
-    .catch((error: unknown) => {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        (error as NodeJS.ErrnoException).code === 'ENOENT'
-      ) {
-        return;
-      }
-      throw error;
-    });
-
-  await fs.mkdir(path.join(params.distRoot, 'content'), { recursive: true });
-  await fs.copyFile(
-    path.join(params.workspaceRoot, 'content', 'content.json'),
-    path.join(params.distRoot, 'content', 'content.json'),
-  );
 }
 
 function formatTimestamp(date: Date): string {
@@ -319,148 +152,292 @@ function formatTimestamp(date: Date): string {
   return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
-async function prepareBuildWorkspace(clientId: ProjectId): Promise<string> {
-  if (!IS_SERVERLESS_RUNTIME) {
-    return REPO_ROOT;
-  }
-
-  const workspaceRoot = path.join(WORK_ROOT, 'workspaces', `${clientId}-${Date.now()}`);
-  await fs.mkdir(workspaceRoot, { recursive: true });
-
-  const entriesToCopy = [
-    'index.html',
-    'vite.config.ts',
-    'vite-plugin-studio.ts',
-    'studio-publish-service.ts',
-    'studio-publish-config-service.ts',
-    'src',
-    'public',
-    'content',
-    'data',
-    'scripts',
-    'tsconfig.app.json',
-  ];
-
-  for (const entry of entriesToCopy) {
-    const sourcePath = path.join(REPO_ROOT, entry);
-    const targetPath = path.join(workspaceRoot, entry);
-    try {
-      const stat = await fs.stat(sourcePath);
-      if (stat.isDirectory()) {
-        await fs.cp(sourcePath, targetPath, { recursive: true });
-      } else {
-        await fs.mkdir(path.dirname(targetPath), { recursive: true });
-        await fs.copyFile(sourcePath, targetPath);
-      }
-    } catch (error) {
-      if (error && typeof error === 'object' && 'code' in error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          continue;
-        }
-      }
-      throw error;
-    }
-  }
-
-  await fs.symlink(path.join(REPO_ROOT, 'node_modules'), path.join(workspaceRoot, 'node_modules'), 'dir');
-  return workspaceRoot;
+function normalizeClientBuildConfig(config: ClientExportBuildConfig): ClientExportBuildConfig {
+  return {
+    basePath: normalizeBasePath(config.basePath),
+    domain: normalizeDomain(config.domain) || DEFAULT_DOMAIN,
+  };
 }
 
-async function buildClientDist(clientId: ProjectId, config: ClientExportBuildConfig): Promise<string> {
-  const workspaceRoot = await prepareBuildWorkspace(clientId);
-  const distRoot = path.join(workspaceRoot, 'dist');
-  const env = {
-    ...process.env,
-    PROJECT_ID: clientId,
-    VITE_PROJECT_ID: clientId,
-    PROJECT_BASE_PATH: config.basePath,
-    VITE_PROJECT_BASE_PATH: config.basePath,
-    PROJECT_DOMAIN: config.domain,
-    VITE_PROJECT_DOMAIN: config.domain,
-    VITE_STUDIO_ENABLED: 'false',
+function assertContentPayload(content: unknown): void {
+  if (!content || typeof content !== 'object' || Array.isArray(content)) {
+    throw new ClientExportError(400, 'Conteúdo inválido para exportação.');
+  }
+
+  try {
+    JSON.stringify(content);
+  } catch {
+    throw new ClientExportError(400, 'Conteúdo inválido para exportação.');
+  }
+}
+
+function normalizeExportsBucket(rawBucket?: string): string {
+  const trimmed = rawBucket?.trim();
+  return trimmed || DEFAULT_EXPORTS_BUCKET;
+}
+
+function normalizeExportClientZipParams(params: ExportClientZipParams): NormalizedExportClientZipParams {
+  const clientId = parseClientIdOrThrow(params.clientIdRaw);
+  assertContentPayload(params.content);
+  return {
+    clientId,
+    content: params.content,
+    buildConfig: normalizeClientBuildConfig(params.buildConfig),
+    supabaseClient: params.supabaseClient ?? null,
+    exportsBucket: normalizeExportsBucket(params.exportsBucket),
   };
+}
 
-  await runCommand(
-    process.execPath,
-    [
-      path.join(workspaceRoot, 'node_modules', 'vite', 'bin', 'vite.js'),
-      'build',
-      '--config',
-      path.join(workspaceRoot, 'scripts', 'vite-export.config.mjs'),
-    ],
-    {
-      cwd: workspaceRoot,
-      env,
-    },
-  );
+function isTextFile(filePath: string): boolean {
+  const extension = path.extname(filePath).toLowerCase();
+  const basename = path.basename(filePath).toLowerCase();
+  if (TEXT_FILE_BASENAMES.has(basename)) {
+    return true;
+  }
+  return TEXT_FILE_EXTENSIONS.has(extension);
+}
 
-  await copyBuildSideFiles({ workspaceRoot, distRoot });
-
-  await runCommand(process.execPath, [path.join(workspaceRoot, 'scripts', 'generate-project-seo-artifacts.mjs')], {
-    cwd: workspaceRoot,
-    env,
-  });
-
-  await hardcodeClientGtmIntoDistIndex(clientId, distRoot);
-  return workspaceRoot;
+function applyReplacers(input: string, replacers: Array<{ from: string; to: string }>): string {
+  let output = input;
+  for (const replacer of replacers) {
+    if (!replacer.from) {
+      continue;
+    }
+    output = output.split(replacer.from).join(replacer.to);
+  }
+  return output;
 }
 
 function buildDownloadUrl(clientId: ProjectId, fileName: string): string {
   return `/api/clients/${encodeURIComponent(clientId)}/exports/${encodeURIComponent(fileName)}/download`;
 }
 
-export async function exportClientZip(clientIdRaw: string): Promise<ExportClientZipResult> {
-  const clientId = parseClientIdOrThrow(clientIdRaw);
-  const buildConfig = await resolveBuildConfig(clientId);
-  let workspaceRoot = REPO_ROOT;
-  let distRoot = path.join(REPO_ROOT, 'dist');
+function buildRobotsContent(sitemapUrl: string): string {
+  return `User-agent: *\nAllow: /\n\nSitemap: ${sitemapUrl}\n`;
+}
 
+function buildSitemapContent(siteRootUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url>\n    <loc>${siteRootUrl}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>1.0</priority>\n  </url>\n</urlset>\n`;
+}
+
+function resolveSiteRootUrl(buildConfig: ClientExportBuildConfig): string {
+  const domain = normalizeDomain(buildConfig.domain) || DEFAULT_DOMAIN;
+  const basePath = normalizeBasePath(buildConfig.basePath);
+  if (basePath === '/') {
+    return `${domain}/`;
+  }
+  return `${domain}${basePath}`;
+}
+
+export async function ensureTemplateExists(): Promise<void> {
+  const checks = [TEMPLATE_ROOT, TEMPLATE_SITE_ROOT, TEMPLATE_METADATA_PATH];
+  for (const checkedPath of checks) {
+    try {
+      await fs.access(checkedPath);
+    } catch {
+      throw new ClientExportError(
+        500,
+        `Template de exportação não encontrado. Execute "npm run build:export-template".`,
+      );
+    }
+  }
+}
+
+export async function readTemplateMetadata(): Promise<{ basePathPlaceholder: string }> {
   try {
-    workspaceRoot = await buildClientDist(clientId, buildConfig);
-    distRoot = path.join(workspaceRoot, 'dist');
+    const raw = await fs.readFile(TEMPLATE_METADATA_PATH, 'utf-8');
+    const parsed = JSON.parse(raw) as TemplateMetadata;
+    const placeholder =
+      typeof parsed?.basePathPlaceholder === 'string' ? parsed.basePathPlaceholder.trim() : '';
+    if (!placeholder) {
+      throw new Error('basePathPlaceholder ausente');
+    }
+    return { basePathPlaceholder: placeholder };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Falha ao gerar build estático do cliente.';
-    throw new ClientExportError(500, message);
+    throw new ClientExportError(500, 'metadata.json do template de exportação está inválido.', {
+      cause: error instanceof Error ? error.message : 'parse_failed',
+    });
+  }
+}
+
+export async function replaceTextFilesRecursively(
+  rootDir: string,
+  replacers: Array<{ from: string; to: string }>,
+): Promise<void> {
+  const entries = await fs.readdir(rootDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      await replaceTextFilesRecursively(entryPath, replacers);
+      continue;
+    }
+    if (!entry.isFile() || !isTextFile(entryPath)) {
+      continue;
+    }
+
+    const original = await fs.readFile(entryPath, 'utf-8');
+    const replaced = applyReplacers(original, replacers);
+    if (replaced !== original) {
+      await fs.writeFile(entryPath, replaced, 'utf-8');
+    }
+  }
+}
+
+export async function writeSeoArtifacts(
+  siteRoot: string,
+  config: ClientExportBuildConfig,
+): Promise<void> {
+  const siteRootUrl = resolveSiteRootUrl(config);
+  const sitemapUrl = `${siteRootUrl}sitemap.xml`;
+  await fs.writeFile(path.join(siteRoot, 'robots.txt'), buildRobotsContent(sitemapUrl), 'utf-8');
+  await fs.writeFile(path.join(siteRoot, 'sitemap.xml'), buildSitemapContent(siteRootUrl), 'utf-8');
+}
+
+export async function createZipFromDirectory(sourceDir: string, outputZipPath: string): Promise<void> {
+  await fs.mkdir(path.dirname(outputZipPath), { recursive: true });
+  await new Promise<void>((resolve, reject) => {
+    const output = createWriteStream(outputZipPath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    output.on('close', () => resolve());
+    output.on('error', reject);
+
+    archive.on('warning', (error: unknown) => {
+      if (error && typeof error === 'object' && 'code' in error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          return;
+        }
+      }
+      reject(error);
+    });
+
+    archive.on('error', reject);
+    archive.pipe(output);
+    archive.directory(sourceDir, false);
+    void archive.finalize();
+  });
+}
+
+export async function uploadZipToSupabase(params: {
+  supabaseClient: SupabaseClient;
+  exportsBucket: string;
+  clientId: ProjectId;
+  fileName: string;
+  absoluteZipPath: string;
+}): Promise<SupabaseUploadResult> {
+  const storagePath = `clients/${params.clientId}/${params.fileName}`;
+  const zipBuffer = await fs.readFile(params.absoluteZipPath);
+  const { error } = await params.supabaseClient.storage
+    .from(params.exportsBucket)
+    .upload(storagePath, zipBuffer, {
+      upsert: true,
+      contentType: 'application/zip',
+      cacheControl: '3600',
+    });
+
+  if (error) {
+    throw new ClientExportError(500, 'Falha ao enviar ZIP para Supabase Storage.', {
+      cause: error.message,
+      storagePath,
+    });
   }
 
+  const signed = await params.supabaseClient.storage
+    .from(params.exportsBucket)
+    .createSignedUrl(storagePath, 60 * 10);
+
+  return {
+    storagePath,
+    downloadUrl: signed.error ? undefined : signed.data?.signedUrl,
+  };
+}
+
+async function writeClientContent(siteRoot: string, content: unknown): Promise<void> {
+  assertContentPayload(content);
+  const outputPath = path.join(siteRoot, 'content', 'content.json');
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  await fs.writeFile(outputPath, `${JSON.stringify(content, null, 2)}\n`, 'utf-8');
+}
+
+export async function exportClientZip(
+  params: ExportClientZipParams,
+): Promise<ExportClientZipResult> {
+  // Fluxo de export atual: overlay + ZIP a partir do template prebuildado, sem build por cliente.
+  const normalizedParams = normalizeExportClientZipParams(params);
+  await ensureTemplateExists();
+  const metadata = await readTemplateMetadata();
+
   const timestamp = formatTimestamp(new Date());
-  const clientArtifactsRoot = path.join(ARTIFACTS_ROOT, clientId);
+  const fileName = `${normalizedParams.clientId}-${timestamp}.zip`;
+  const clientArtifactsRoot = path.join(ARTIFACTS_ROOT, normalizedParams.clientId);
   const buildPath = path.join(clientArtifactsRoot, 'build', timestamp);
   const zipDirectoryPath = path.join(clientArtifactsRoot, 'zip');
-  const fileName = `${clientId}-${timestamp}.zip`;
-  const absoluteZipPath = path.join(zipDirectoryPath, fileName);
+
+  await fs.mkdir(TEMP_WORKSPACES_ROOT, { recursive: true });
+  const temporaryWorkspace = await fs.mkdtemp(
+    path.join(TEMP_WORKSPACES_ROOT, `${normalizedParams.clientId}-`),
+  );
+  const siteRoot = path.join(temporaryWorkspace, 'site');
+  const temporaryZipPath = path.join(temporaryWorkspace, fileName);
 
   try {
+    await fs.cp(TEMPLATE_SITE_ROOT, siteRoot, { recursive: true });
+    await replaceTextFilesRecursively(siteRoot, [
+      {
+        from: metadata.basePathPlaceholder,
+        to: normalizedParams.buildConfig.basePath,
+      },
+    ]);
+
+    await writeClientContent(siteRoot, normalizedParams.content);
+    await writeSeoArtifacts(siteRoot, normalizedParams.buildConfig);
+    await createZipFromDirectory(siteRoot, temporaryZipPath);
+
     await fs.mkdir(path.dirname(buildPath), { recursive: true });
-    await fs.mkdir(zipDirectoryPath, { recursive: true });
     await fs.rm(buildPath, { recursive: true, force: true });
-    await fs.cp(distRoot, buildPath, { recursive: true });
+    await fs.cp(siteRoot, buildPath, { recursive: true });
 
-    try {
-      await runCommand('zip', ['-rq', absoluteZipPath, '.'], { cwd: buildPath });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Falha ao compactar ZIP do cliente.';
-      throw new ClientExportError(500, message);
-    }
-
+    await fs.mkdir(zipDirectoryPath, { recursive: true });
+    const absoluteZipPath = path.join(zipDirectoryPath, fileName);
+    await fs.copyFile(temporaryZipPath, absoluteZipPath);
     const stat = await fs.stat(absoluteZipPath);
 
+    let storagePath: string | undefined;
+    let signedDownloadUrl: string | undefined;
+    if (normalizedParams.supabaseClient) {
+      const uploadResult = await uploadZipToSupabase({
+        supabaseClient: normalizedParams.supabaseClient,
+        exportsBucket: normalizedParams.exportsBucket,
+        clientId: normalizedParams.clientId,
+        fileName,
+        absoluteZipPath,
+      });
+      storagePath = uploadResult.storagePath;
+      signedDownloadUrl = uploadResult.downloadUrl;
+    }
+
     return {
-      clientId,
+      clientId: normalizedParams.clientId,
       buildPath,
-      buildConfig,
+      buildConfig: normalizedParams.buildConfig,
       zip: {
-        clientId,
+        clientId: normalizedParams.clientId,
         fileName,
         absolutePath: absoluteZipPath,
+        storagePath,
         sizeInBytes: stat.size,
         createdAt: stat.mtime.toISOString(),
+        downloadUrl: signedDownloadUrl,
       },
     };
-  } finally {
-    if (IS_SERVERLESS_RUNTIME && workspaceRoot !== REPO_ROOT) {
-      await fs.rm(workspaceRoot, { recursive: true, force: true }).catch(() => undefined);
+  } catch (error) {
+    if (error instanceof ClientExportError) {
+      throw error;
     }
+    const message = error instanceof Error ? error.message : 'Falha ao gerar ZIP do cliente.';
+    throw new ClientExportError(500, message);
+  } finally {
+    await fs.rm(temporaryWorkspace, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -542,9 +519,9 @@ export async function getClientExportByFileName(
   }
 }
 
-export function enrichClientExportWithDownloadUrl(artifact: ClientExportZipArtifact) {
+export function enrichClientExportWithDownloadUrl(artifact: ClientExportZipArtifactLike) {
   return {
     ...artifact,
-    downloadUrl: buildDownloadUrl(artifact.clientId, artifact.fileName),
+    downloadUrl: artifact.downloadUrl || buildDownloadUrl(artifact.clientId, artifact.fileName),
   };
 }
