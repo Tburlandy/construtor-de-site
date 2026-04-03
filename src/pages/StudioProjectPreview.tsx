@@ -184,6 +184,14 @@ export default function StudioProjectPreview() {
       const target = event.target as Element | null;
       if (!target) return;
 
+      const clickedLink = target.closest('a[href]');
+      if (clickedLink instanceof HTMLAnchorElement) {
+        const href = clickedLink.getAttribute('href')?.trim() ?? '';
+        if (!href.startsWith('#')) {
+          event.preventDefault();
+        }
+      }
+
       for (const { selector, sectionId } of CLICK_SECTION_MAP) {
         if (target.closest(selector)) {
           window.parent.postMessage(
@@ -195,8 +203,8 @@ export default function StudioProjectPreview() {
       }
     };
 
-    document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
   }, [state.status, renderKey]);
 
   useEffect(() => {
