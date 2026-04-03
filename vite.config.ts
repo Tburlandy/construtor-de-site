@@ -26,15 +26,17 @@ function resolveProjectBasePath(mode: string, env: Record<string, string>): stri
     process.env.VITE_PROJECT_BASE_PATH || process.env.PROJECT_BASE_PATH || process.env.BASE_PATH;
   if (explicitFromShell?.trim()) {
     if (explicitFromShell.trim() === "/") {
-      return DEFAULT_BASE_PATH;
+      return "/";
     }
     return normalizeBasePath(explicitFromShell);
   }
 
   const configuredPath = env.VITE_PROJECT_BASE_PATH || env.PROJECT_BASE_PATH || env.BASE_PATH;
-  // Em produção, evita que config local com "/" force build para raiz por acidente.
-  if (!configuredPath || configuredPath.trim() === "/") {
+  if (!configuredPath) {
     return DEFAULT_BASE_PATH;
+  }
+  if (configuredPath.trim() === "/") {
+    return "/";
   }
 
   return normalizeBasePath(configuredPath);
