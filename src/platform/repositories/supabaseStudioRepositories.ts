@@ -1,7 +1,11 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { z } from 'zod';
+
+import { ContentSchema } from '../../content/schema.js';
 import {
   ProjectContentRecordSchema,
   ProjectMetadataSchema,
+  ProjectSchema,
   PublicationRecordSchema,
   ProjectSeoConfigSchema,
   ProjectVersionRecordSchema,
@@ -13,10 +17,19 @@ import {
   type ProjectSeoConfig,
   type ProjectVersionRecord,
 } from '../contracts/index.js';
+import {
+  StudioBaseTemplateRecordSchema,
+  StudioClientTemplateStateRecordSchema,
+  type StudioBaseTemplateRecord,
+  type StudioClientTemplateStateRecord,
+} from '../contracts/studioTemplateInheritance.js';
 import type { ProjectContentRepository } from './projectContentRepository.js';
 import type { ProjectMetadataRepository } from './projectMetadataRepository.js';
 import type { ProjectPublicationRepository } from './projectPublicationRepository.js';
 import type { ProjectSeoConfigRepository } from './projectSeoConfigRepository.js';
+import type { StudioBaseTemplateRepository } from './studioBaseTemplateRepository.js';
+import { STUDIO_BASE_TEMPLATE_KEY_STYLE_1 } from './studioBaseTemplateRepository.js';
+import type { StudioClientTemplateStateRepository } from './studioClientTemplateStateRepository.js';
 import type { ProjectVersionRepository } from './projectVersionRepository.js';
 
 const PROJECTS_TABLE = 'studio_projects';
@@ -24,6 +37,10 @@ const CONTENTS_TABLE = 'studio_project_contents';
 const SEO_TABLE = 'studio_project_seo_configs';
 const VERSIONS_TABLE = 'studio_project_versions';
 const PUBLICATIONS_TABLE = 'studio_project_publications';
+const BASE_TEMPLATES_TABLE = 'studio_base_templates';
+const CLIENT_TEMPLATE_STATES_TABLE = 'studio_client_template_states';
+
+const SupabaseTemplateKeySchema = z.string().trim().min(1).regex(/^[^/\\]+$/);
 
 export type SupabaseStudioClientParams = {
   supabaseUrl?: string;
@@ -264,6 +281,144 @@ export function createSupabaseProjectPublicationRepository(
   };
 }
 
+/**
+ * Repositório Supabase do template central (`studio_base_templates`).
+ * PK esperada: `template_key`.
+ */
+export function createSupabaseStudioBaseTemplateRepository(
+  supabase: SupabaseClient,
+): StudioBaseTemplateRepository {
+  const getByTemplateKey = async (
+    templateKey: string,
+  ): Promise<StudioBaseTemplateRecord | null> => {
+    const key = SupabaseTemplateKeySchema.parse(templateKey);
+    const { data, error } = await supabase
+      .from(BASE_TEMPLATES_TABLE)
+      .select('*')
+      .eq('template_key', key)
+      .maybeSingle();
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      return null;
+    }
+    return mapRowToStudioBaseTemplateRecord(data as Record<string, unknown>);
+  };
+
+  const save = async (
+    record: StudioBaseTemplateRecord,
+  ): Promise<StudioBaseTemplateRecord> => {
+    const validated = StudioBaseTemplateRecordSchema.parse(record);
+    const { data, error } = await supabase
+      .from(BASE_TEMPLATES_TABLE)
+      .upsert(mapStudioBaseTemplateRecordToRow(validated), {
+        onConflict: 'template_key',
+      })
+      .select('*')
+      .single();
+    if (error) {
+      throw error;
+    }
+    return mapRowToStudioBaseTemplateRecord(data as Record<string, unknown>);
+  };
+
+  const ensureDefaultStyle1Exists = async (): Promise<StudioBaseTemplateRecord> => {
+    const key = STUDIO_BASE_TEMPLATE_KEY_STYLE_1;
+    const existing = await getByTemplateKey(key);
+    if (existing) {
+      return existing;
+    }
+    const ts = new Date().toISOString();
+    const record: StudioBaseTemplateRecord = {
+      styleId: key,
+      content: buildSupabaseDefaultStyle1SeedContent(),
+      updatedAt: ts,
+      createdAt: ts,
+    };
+    return save(record);
+  };
+
+  return {
+    getByTemplateKey,
+    save,
+    ensureDefaultStyle1Exists,
+  };
+}
+
+/**
+ * Repositório Supabase do estado de herança por projeto (`studio_client_template_states`).
+ * Unique esperada: (`project_id`, `template_key`). `getByProjectId` retorna a primeira linha
+ * (ordenada por `template_key`) se houver várias — na V1 costuma haver uma linha por projeto.
+ */
+export function createSupabaseStudioClientTemplateStateRepository(
+  supabase: SupabaseClient,
+): StudioClientTemplateStateRepository {
+  return {
+    async getByProjectId(
+      projectId: ProjectId,
+    ): Promise<StudioClientTemplateStateRecord | null> {
+      const id = ProjectSchema.parse({ projectId }).projectId;
+      const { data, error } = await supabase
+        .from(CLIENT_TEMPLATE_STATES_TABLE)
+        .select('*')
+        .eq('project_id', id)
+        .order('template_key', { ascending: true })
+        .limit(1);
+      if (error) {
+        throw error;
+      }
+      const row = data?.[0];
+      if (!row) {
+        return null;
+      }
+      return mapRowToStudioClientTemplateStateRecord(row as Record<string, unknown>);
+    },
+
+    async save(
+      record: StudioClientTemplateStateRecord,
+    ): Promise<StudioClientTemplateStateRecord> {
+      const validated = StudioClientTemplateStateRecordSchema.parse(record);
+      const { data, error } = await supabase
+        .from(CLIENT_TEMPLATE_STATES_TABLE)
+        .upsert(mapStudioClientTemplateStateRecordToRow(validated), {
+          onConflict: 'project_id,template_key',
+        })
+        .select('*')
+        .single();
+      if (error) {
+        throw error;
+      }
+      return mapRowToStudioClientTemplateStateRecord(data as Record<string, unknown>);
+    },
+
+    async deleteByProjectId(projectId: ProjectId): Promise<void> {
+      const id = ProjectSchema.parse({ projectId }).projectId;
+      const { error } = await supabase
+        .from(CLIENT_TEMPLATE_STATES_TABLE)
+        .delete()
+        .eq('project_id', id);
+      if (error) {
+        throw error;
+      }
+    },
+
+    async listAll(): Promise<StudioClientTemplateStateRecord[]> {
+      const { data, error } = await supabase
+        .from(CLIENT_TEMPLATE_STATES_TABLE)
+        .select('*')
+        .order('project_id', { ascending: true })
+        .order('template_key', { ascending: true });
+      if (error) {
+        throw error;
+      }
+      return (data ?? []).map((row) =>
+        mapRowToStudioClientTemplateStateRecord(row as Record<string, unknown>),
+      );
+    },
+  };
+}
+
 function mapRowToProjectMetadata(row: Record<string, unknown>): ProjectMetadata {
   return ProjectMetadataSchema.parse({
     projectId: row.project_id,
@@ -383,6 +538,97 @@ function mapRowToProjectPublicationRecord(
       typeof row.message === 'string' && row.message.length > 0
         ? row.message
         : undefined,
+  });
+}
+
+function mapRowToStudioBaseTemplateRecord(
+  row: Record<string, unknown>,
+): StudioBaseTemplateRecord {
+  return StudioBaseTemplateRecordSchema.parse({
+    styleId: row.template_key,
+    schemaVersion:
+      typeof row.schema_version === 'string' && row.schema_version.length > 0
+        ? row.schema_version
+        : undefined,
+    content: row.content,
+    updatedAt: row.updated_at,
+    createdAt: undefined,
+  });
+}
+
+function mapStudioBaseTemplateRecordToRow(
+  record: StudioBaseTemplateRecord,
+): Record<string, unknown> {
+  const validated = StudioBaseTemplateRecordSchema.parse(record);
+  return {
+    template_key: validated.styleId,
+    schema_version: validated.schemaVersion ?? null,
+    content: validated.content,
+    updated_at: validated.updatedAt,
+  };
+}
+
+function mapRowToStudioClientTemplateStateRecord(
+  row: Record<string, unknown>,
+): StudioClientTemplateStateRecord {
+  return StudioClientTemplateStateRecordSchema.parse({
+    projectId: row.project_id,
+    styleId: row.template_key,
+    variables: row.variables ?? {},
+    overrides: row.overrides ?? {},
+    overriddenPaths: Array.isArray(row.override_paths) ? row.override_paths : [],
+    updatedAt: row.updated_at,
+  });
+}
+
+function mapStudioClientTemplateStateRecordToRow(
+  record: StudioClientTemplateStateRecord,
+): Record<string, unknown> {
+  const validated = StudioClientTemplateStateRecordSchema.parse(record);
+  return {
+    project_id: validated.projectId,
+    template_key: validated.styleId,
+    variables: validated.variables,
+    overrides: validated.overrides,
+    override_paths: validated.overriddenPaths,
+    updated_at: validated.updatedAt,
+  };
+}
+
+/** Alinhado ao seed mínimo do repositório file-based (`studioBaseTemplateRepository`). */
+function buildSupabaseDefaultStyle1SeedContent(): StudioBaseTemplateRecord['content'] {
+  return ContentSchema.parse({
+    global: {
+      brand: '{{brand}}',
+      city: '{{city}}',
+      whatsappE164: '{{whatsappE164}}',
+      cnpj: '',
+      address: '',
+      siteUrl: '{{siteUrl}}',
+    },
+    seo: {
+      title: '{{brand}} | {{city}}',
+      description: 'Template central Estilo 1 — personalize no Studio.',
+      canonical: '{{siteUrl}}/',
+      ogImage: '/hero-solar-panels.jpg',
+      jsonLd: {},
+    },
+    hero: {
+      headline: 'Energia solar em {{city}}',
+      subheadline: 'Template base Estilo 1.',
+      ctaLabel: 'Solicitar orçamento',
+      background: '/hero-solar-panels.jpg',
+    },
+    benefits: [
+      {
+        icon: 'sun',
+        title: 'Benefício exemplo',
+        text: 'Substitua no template central.',
+      },
+    ],
+    showcase: {
+      projects: [],
+    },
   });
 }
 

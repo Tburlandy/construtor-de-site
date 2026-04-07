@@ -119,6 +119,10 @@ export const ContentSchema = z.object({
     formId: z.string().optional(),
     formName: z.string().optional(),
     canalId: z.string().optional(),
+    /** Placeholder `{{yearsInMarket}}` — estado do cliente / interpolação do template. */
+    yearsInMarket: z.string().optional(),
+    /** Placeholder `{{projectCount}}` — estado do cliente / interpolação do template. */
+    projectCount: z.string().optional(),
   }),
   seo: z.object({
     title: z.string(),

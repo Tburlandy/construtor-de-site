@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Loader2, PencilLine, Plus, Settings, Trash2 } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { AlertTriangle, ArrowRight, LayoutTemplate, Loader2, PencilLine, Plus, Settings, Trash2 } from 'lucide-react';
 import type { Content } from '@/content/schema';
 import type { ProjectListItemWithContentLogo, ProjectMetadata } from '@/platform/contracts';
 import {
@@ -740,6 +740,36 @@ export default function StudioAdminEntry() {
           <h1 className="builder-heading mt-2 text-[clamp(1.8rem,3vw,2.3rem)] font-bold leading-[1.1]">
             Clientes
           </h1>
+
+          <Link
+            to="/construtor/template-base/style-1"
+            className="group mt-6 block rounded-[14px] border border-amber-400/40 bg-gradient-to-br from-amber-500/[0.12] via-[rgba(15,23,42,0.92)] to-[rgba(14,165,233,0.06)] p-5 shadow-[0_0_0_1px_rgba(251,191,36,0.08)] outline-none ring-offset-2 ring-offset-[var(--builder-bg-page)] transition hover:border-amber-300/60 hover:from-amber-500/[0.18] focus-visible:ring-2 focus-visible:ring-amber-400/70"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+              <div className="flex min-w-0 flex-1 gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-400/35 bg-amber-500/15 text-amber-100">
+                  <LayoutTemplate className="h-5 w-5" aria-hidden />
+                </div>
+                <div className="min-w-0">
+                  <span className="inline-flex rounded-full border border-amber-400/45 bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-amber-100">
+                    Template base
+                  </span>
+                  <h2 className="builder-heading mt-2 text-lg font-bold leading-tight text-[var(--builder-text-primary)]">
+                    Estilo 1 — padrão central
+                  </h2>
+                  <p className="mt-1 max-w-xl text-sm text-[var(--builder-text-secondary)]">
+                    Edite o modelo com placeholders da marca e da cidade. Os clientes que herdam o Estilo 1 partem daqui.
+                  </p>
+                </div>
+              </div>
+              <span
+                className={`${builderPrimaryButtonClassName} shrink-0 justify-center group-hover:brightness-110 sm:self-center`}
+              >
+                Abrir central do template
+                <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden />
+              </span>
+            </div>
+          </Link>
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--builder-text-muted)]">

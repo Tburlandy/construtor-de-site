@@ -118,3 +118,5 @@ export type DeployTargetRecord = z.infer<typeof DeployTargetRecordSchema>;
 export type PublicationRecord = z.infer<typeof PublicationRecordSchema>;
 export type ProjectVersionRecord = z.infer<typeof ProjectVersionRecordSchema>;
 export type ProjectRecord = z.infer<typeof ProjectRecordSchema>;
+
+export * from './studioTemplateInheritance.js';

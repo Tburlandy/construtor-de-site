@@ -9,7 +9,10 @@
     "build:export-template": "node ./scripts/build-export-template.mjs",
     "build:dev": "vite build --mode development && cp public/.htaccess dist/.htaccess 2>/dev/null || true && mkdir -p dist/content && cp content/content.json dist/content/content.json && node ./scripts/generate-project-seo-artifacts.mjs",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "migrate:style1-inheritance": "node --import tsx scripts/migrate-style1-template-inheritance.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -81,6 +84,7 @@
     "@types/node": "^22.16.5",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
+    "@types/supertest": "^7.2.0",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
@@ -91,10 +95,13 @@
     "lovable-tagger": "^1.1.11",
     "postcss": "^8.5.6",
     "supabase": "^2.84.4",
+    "supertest": "^7.2.2",
     "tailwindcss": "^3.4.17",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vercel": "^50.37.3"
+    "vercel": "^50.37.3",
+    "vitest": "^4.1.3"
   }
 }

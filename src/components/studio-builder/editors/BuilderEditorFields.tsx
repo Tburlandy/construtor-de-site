@@ -181,6 +181,7 @@ export function BuilderImageLayoutControls({
 }
 
 interface BuilderImageFieldProps {
+  /** Se vazio, o rótulo não é renderizado (útil com chrome externo). */
   label: string;
   description?: string;
   value: string;
@@ -221,7 +222,7 @@ export function BuilderImageField({
   return (
     <div className="space-y-2">
       <div className="space-y-1">
-        <p className={builderLabelClassName}>{label}</p>
+        {label ? <p className={builderLabelClassName}>{label}</p> : null}
         {description ? <p className={builderHintClassName}>{description}</p> : null}
       </div>
 

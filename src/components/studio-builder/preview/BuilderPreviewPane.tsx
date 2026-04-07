@@ -11,6 +11,12 @@ interface BuilderPreviewPaneProps {
   activeSectionId: BuilderSectionId;
   refreshSignal: number;
   onSectionChange?: (sectionId: BuilderSectionId) => void;
+  /** Caminho do iframe (com ou sem barra inicial), relativo ao basename. Se omitido, usa `/preview/:projectId`. */
+  previewPathOverride?: string;
+  /** Título acessível do iframe (ex.: preview do template base). */
+  previewIframeTitle?: string;
+  /** Subtítulo exibido no cabeçalho da coluna de preview. */
+  previewHeading?: string;
 }
 
 interface PreviewMessagePayload {
@@ -48,6 +54,9 @@ export function BuilderPreviewPane({
   activeSectionId,
   refreshSignal,
   onSectionChange,
+  previewPathOverride,
+  previewIframeTitle,
+  previewHeading = 'Preview do site',
 }: BuilderPreviewPaneProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const previewViewportRef = useRef<HTMLDivElement | null>(null);
@@ -55,8 +64,18 @@ export function BuilderPreviewPane({
   const [previewScale, setPreviewScale] = useState(1);
 
   const previewPath = useMemo(() => {
+    const raw = previewPathOverride?.trim();
+    if (raw) {
+      if (/^https?:\/\//i.test(raw)) {
+        return raw;
+      }
+      const path = raw.startsWith('/') ? raw : `/${raw}`;
+      return withBasePath(path);
+    }
     return withBasePath(`/preview/${encodeURIComponent(projectId)}`);
-  }, [projectId]);
+  }, [previewPathOverride, projectId]);
+
+  const iframeTitle = previewIframeTitle?.trim() || `Preview do cliente ${projectId}`;
 
   const scaledFrameWidth = PREVIEW_FRAME_WIDTH * previewScale;
   const scaledFrameHeight = PREVIEW_FRAME_HEIGHT * previewScale;
@@ -141,7 +160,7 @@ export function BuilderPreviewPane({
           <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-[var(--builder-accent-warm)]">
             Preview
           </p>
-          <h2 className="text-lg font-semibold text-[#e2e8f0]">Preview do site</h2>
+          <h2 className="text-lg font-semibold text-[#e2e8f0]">{previewHeading}</h2>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <button
@@ -189,7 +208,7 @@ export function BuilderPreviewPane({
           <iframe
             ref={iframeRef}
             src={previewPath}
-            title={`Preview do cliente ${projectId}`}
+            title={iframeTitle}
             onLoad={() => {
               setIframeReady(true);
               postMessageToPreview(iframeRef.current, {

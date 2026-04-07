@@ -3,7 +3,11 @@ import { useParams } from 'react-router-dom';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { ContentSchema, type Content } from '@/content/schema';
 import Index from './Index';
-import { clearContentCache, setContentRuntimeOverride } from '@/lib/content';
+import {
+  clearContentCache,
+  parseResolvedProjectContentPayload,
+  setContentRuntimeOverride,
+} from '@/lib/content';
 import type { BuilderSectionId } from '@/components/studio-builder/builderSections';
 
 type PreviewState =
@@ -101,6 +105,7 @@ export default function StudioProjectPreview() {
       }
 
       try {
+        // Sem `includeInheritanceMeta`: corpo é só o Content já resolvido (herança + SEO no servidor).
         const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/content`);
 
         if (response.status === 404) {
@@ -115,7 +120,8 @@ export default function StudioProjectPreview() {
           throw new Error('fetch failed');
         }
 
-        const projectContent = (await response.json()) as Content;
+        const raw: unknown = await response.json();
+        const projectContent = parseResolvedProjectContentPayload(raw);
         clearContentCache();
         setContentRuntimeOverride(projectContent);
         setRenderKey((current) => current + 1);
