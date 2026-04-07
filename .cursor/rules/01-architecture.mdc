@@ -1,0 +1,50 @@
+---
+description: Regras para respeitar a arquitetura atual e evoluir o sistema de forma incremental.
+globs:
+  - "src/**/*"
+  - "vite.config.ts"
+  - "studio-server.ts"
+  - "vite-plugin-studio.ts"
+  - "content/**/*"
+alwaysApply: true
+---
+
+# Objetivo
+
+Evitar refactors desnecessários e preservar a base atual enquanto o sistema evolui de single-site para multi-projeto.
+
+# Quando se aplica
+
+Sempre que a task tocar arquitetura, persistência, conteúdo, build ou Studio.
+
+# Instruções
+
+- Parta da arquitetura descrita em `docs/context/03-current-architecture.md`.
+- Siga a decisão inicial registrada em `docs/context/04-mvp-persistence-and-artifact-layout-adr.md`.
+- Reaproveite primeiro:
+  - layout atual;
+  - componentes existentes;
+  - schema Zod existente do conteúdo do site;
+  - pipeline atual de upload;
+  - fluxo do Studio, quando possível.
+- Para contratos do domínio da plataforma, prefira um namespace próprio e pequeno, em vez de misturar cedo demais com `src/content/schema.ts`.
+- Introduza novas camadas somente quando forem necessárias para o card atual.
+- Mudanças de arquitetura devem ter blast radius controlado.
+
+# Proibições
+
+- Não migrar stack.
+- Não reorganizar o repositório inteiro.
+- Não criar monorepo.
+- Não reescrever todas as rotas ou todo o Studio sem card específico.
+- Não substituir padrões existentes por abstrações genéricas demais.
+
+# Expectativas de validação
+
+- Confirmar que os pontos críticos existentes continuam íntegros:
+  - build;
+  - roteamento;
+  - carregamento de conteúdo;
+  - upload de mídia;
+  - SEO.
+- Reportar qualquer trade-off arquitetural introduzido.

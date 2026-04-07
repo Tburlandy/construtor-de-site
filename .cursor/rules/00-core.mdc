@@ -1,0 +1,39 @@
+```md
+---
+description: Regras centrais para trabalhar neste repositório sem reescrever o produto e sem perder o PRD como fonte de verdade.
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Objetivo
+
+Garantir que toda execução respeite o PRD canônico, o kit operacional e os limites de escopo.
+
+# Quando se aplica
+
+Sempre.
+
+# Instruções
+
+- Use `docs/prd/00-product-prd.md` como fonte de verdade do produto.
+- Use `docs/execution/00-master-execution-guide.md` como guia operacional.
+- Use `docs/context/04-mvp-persistence-and-artifact-layout-adr.md` como decisão estrutural inicial para persistência MVP e layout de artefatos.
+- Antes de alterar código, leia o card atual e os arquivos obrigatórios listados nele.
+- Faça mudanças incrementais.
+- Prefira menor mudança segura ao invés de redesign amplo.
+- Se houver dúvida factual sobre o projeto real, declare explicitamente: `Assunção / validar no código`.
+
+# Proibições
+
+- Não reescrever o PRD.
+- Não reinterpretar o produto fora do PRD.
+- Não expandir escopo.
+- Não criar arquitetura nova ampla sem necessidade explícita.
+- Não alterar arquivos fora do escopo do card por oportunidade.
+
+# Expectativas de validação
+
+- Sempre executar as validações mínimas do card.
+- Sempre reportar arquivos alterados.
+- Sempre reportar limitações e próximos riscos.

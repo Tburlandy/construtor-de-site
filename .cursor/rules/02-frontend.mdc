@@ -1,0 +1,37 @@
+---
+description: Regras para mudanças em React, páginas, componentes e fluxo de edição.
+globs:
+  - "src/**/*.ts"
+  - "src/**/*.tsx"
+alwaysApply: false
+---
+
+# Objetivo
+
+Manter a UI incremental, revisável e alinhada ao comportamento atual.
+
+# Quando se aplica
+
+Sempre que a task tocar páginas, componentes ou fluxo visual.
+
+# Instruções
+
+- Preserve o layout atual como base, salvo instrução explícita em contrário.
+- Faça componentes pequenos e focados.
+- Evite criar abstrações prematuras.
+- Páginas devem orquestrar fluxo; utilitários compartilháveis devem sair da página quando fizer sentido real.
+- Se a task for apenas shell de UI, não tente completar lógica que pertence a outro card.
+- Se a task envolver Studio, respeite o fluxo atual e migre apenas o trecho necessário.
+
+# Proibições
+
+- Não alterar layout sem necessidade do card.
+- Não fazer redesign visual.
+- Não misturar UI shell com lógica profunda de persistência se o card não pedir.
+- Não mexer em páginas auxiliares sem relação com a task.
+
+# Expectativas de validação
+
+- `npm run lint`
+- build se a task tocar roteamento, providers, base path ou renderização central
+- resumo final com telas/rotas afetadas

@@ -1,0 +1,51 @@
+---
+description: Regras para mudanças em conteúdo, SEO, build e geração de artefatos.
+globs:
+  - "content/**/*"
+  - "src/content/**/*"
+  - "src/lib/content.ts"
+  - "src/seo/**/*"
+  - "public/robots.txt"
+  - "public/sitemap.xml"
+  - "vite.config.ts"
+  - "studio-server.ts"
+  - "vite-plugin-studio.ts"
+alwaysApply: false
+---
+
+# Objetivo
+
+Proteger os fluxos mais sensíveis do projeto: conteúdo, SEO e build.
+
+# Quando se aplica
+
+Sempre que a task tocar:
+- schema de conteúdo;
+- carregamento de conteúdo;
+- metadados SEO;
+- build;
+- exportação;
+- publicação.
+
+# Instruções
+
+- Trate SEO como requisito central, não detalhe cosmético.
+- Preserve ou melhore o comportamento atual; não degrade.
+- Se a task alterar o modelo de conteúdo, mantenha contrato de transição claro.
+- Se a task alterar base path ou paths de assets, valide build.
+- Gere artefatos por projeto somente quando o card pedir.
+- Em fluxo de publicação, mantenha logs claros e limites explícitos.
+
+# Proibições
+
+- Não mover conteúdo crítico para fetch client-side de forma que degrade SEO, salvo card explícito.
+- Não quebrar canonical, robots, sitemap ou paths de assets.
+- Não assumir publicação remota sem validar fluxo.
+- Não implementar “admin embarcado” fora da fase específica.
+
+# Expectativas de validação
+
+- `npm run lint`
+- typecheck aplicável
+- `npm run build`
+- resumo explícito de impactos em SEO/build

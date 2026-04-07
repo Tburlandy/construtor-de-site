@@ -1,0 +1,37 @@
+name: Build Export Template
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-export-template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build export template
+        run: npm run build:export-template
+
+      - name: Upload export template artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: export-template
+          path: .export-template/current
+          if-no-files-found: error

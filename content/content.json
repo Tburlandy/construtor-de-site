@@ -1,0 +1,290 @@
+{
+  "global": {
+    "brand": "EFITEC SOLAR",
+    "logo": "https://www.efitecsolar.com/assets/images/logo.png",
+    "city": "São Gonçalo e Niterói",
+    "whatsappE164": "5521990875936",
+    "cnpj": "32.174.397/0001-24",
+    "address": "R. Oliveira Botelho, 428  \nNeves, São Gonçalo - RJ\nCEP: 24425-006",
+    "siteUrl": "https://www.efitecsolar.com",
+    "gtmId": "GTM-MR6FMD7L",
+    "webhookUrl": "https://script.google.com/macros/s/AKfycbx_3dsTReImmnSLZUahcV7Vft7QcwoAT2xLSYj6WvOVRcg8B2k_4RIKqzVxnSTaK-8nJQ/exec",
+    "secondaryWebhookUrl": "https://b1f5adb22685.ngrok-free.app/webhook/elementor",
+    "formId": "54b01719",
+    "formName": "Acompanhamento",
+    "canalId": "ZhVZTpUHoR_CHD_-"
+  },
+  "seo": {
+    "title": "Energia Solar Fotovoltaica | Painéis Solares | Instalação e Projeto",
+    "description": "Instalação de painéis solares fotovoltaicos com engenharia própria e marcas Tier-1. Projeto, instalação e homologação ANEEL. Economize até 95% na conta de luz. Solicite orçamento gratuito.",
+    "canonical": "{{siteUrl}}/",
+    "ogImage": "/hero-solar-panels.jpg",
+    "jsonLd": {
+      "@context": "https://schema.org",
+      "@type": "LocalBusiness",
+      "name": "{{brand}}",
+      "url": "{{siteUrl}}/",
+      "telephone": "+{{whatsappE164}}",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "{{city}}",
+        "addressCountry": "BR"
+      },
+      "priceRange": "$$",
+      "areaServed": "{{city}}",
+      "category": "Solar energy company"
+    }
+  },
+  "hero": {
+    "headline": "⚡ Líder em painéis solares em {{city}}",
+    "subheadline": "☀️ Instalação rápida, equipe especializada e condições acessíveis para transformar sua economia.",
+    "ctaLabel": "Orçamento gratuito",
+    "secondaryCtaLabel": "Fale no Whatsapp",
+    "floatingCtaLabel": "WhatsApp",
+    "stats": [
+      {
+        "value": "+1000",
+        "label": "Projetos instalados"
+      },
+      {
+        "value": "25 anos",
+        "label": "de garantia nas placas"
+      },
+      {
+        "value": "100%",
+        "label": "de satisfação no Google"
+      },
+      {
+        "value": "6 anos",
+        "label": "No mercado"
+      }
+    ],
+    "background": "/hero-solar-panels.jpg"
+  },
+  "header": {
+    "menu": [
+      { "sectionId": "forma-pagamento", "label": "Forma de pagamento" },
+      { "sectionId": "cuidamos-tudo", "label": "Serviço completo" },
+      { "sectionId": "sobre-nos", "label": "Sobre nós" },
+      { "sectionId": "casos", "label": "Projetos" },
+      { "sectionId": "como-funciona", "label": "Como funciona" }
+    ],
+    "desktopCtaLabel": "Fale no Whatsapp",
+    "mobileCtaLabel": "Fale no Whatsapp",
+    "mobileCompactCtaLabel": "WhatsApp"
+  },
+  "financing": {
+    "badge": "Pagamento Facilitado",
+    "titlePrefix": "Comece a pagar em",
+    "titleHighlight": "abril de 2026",
+    "subtitle": "Em até 120 vezes, com 1º pagamento em 120 dias",
+    "items": [
+      {
+        "title": "120 dias para começar",
+        "description": "Você só começa a pagar em 4 meses"
+      },
+      {
+        "title": "Até 120 parcelas",
+        "description": "Parcelas que cabem no seu bolso com taxas reduzidas"
+      },
+      {
+        "title": "Zero de entrada",
+        "description": "Comece a economizar sem desembolso inicial"
+      }
+    ],
+    "ctaLabel": "Orçamento gratuito"
+  },
+  "benefits": [
+    {
+      "icon": "FileCheck",
+      "title": "Projeto Completo",
+      "text": "Dimensionamento técnico e análise de viabilidade"
+    },
+    {
+      "icon": "Wrench",
+      "title": "Instalação Profissional",
+      "text": "Equipe certificada com NR10 e NR35"
+    },
+    {
+      "icon": "CheckCircle2",
+      "title": "Homologação ANEEL",
+      "text": "Cuidamos de toda a documentação e aprovação"
+    },
+    {
+      "icon": "Headphones",
+      "title": "Suporte Completo",
+      "text": "Atendimento local e monitoramento contínuo"
+    }
+  ],
+  "showcase": {
+    "titleHighlight": "+ 1000",
+    "titleSuffix": "projetos realizados",
+    "subtitle": "Projetos reais implementados com resultados comprovados",
+    "labels": {
+      "location": "Localização",
+      "system": "Sistema",
+      "annualSavings": "Economia anual"
+    },
+    "projects": [
+      {
+        "image": "/case-sao-goncalo.png",
+        "tipo": "Residencial",
+        "localizacao": "São Gonçalo",
+        "modulos": 8,
+        "potenciaModulo": 570,
+        "economia": 6000
+      },
+      {
+        "image": "/case-veterinario.png",
+        "tipo": "Comercial",
+        "localizacao": "Niterói",
+        "modulos": 74,
+        "potenciaModulo": 550,
+        "economia": 55000
+      },
+      {
+        "image": "/case-rio-ouro.png",
+        "tipo": "Residencial",
+        "localizacao": "Niterói",
+        "modulos": 17,
+        "potenciaModulo": 550,
+        "economia": 11793
+      },
+      {
+        "image": "/case-barra-tijuca.png",
+        "tipo": "Residencial",
+        "localizacao": "Barra da Tijuca",
+        "modulos": 16,
+        "potenciaModulo": 550,
+        "economia": 14500
+      },
+      {
+        "image": "/case-duque-caxias.png",
+        "tipo": "Comercial",
+        "localizacao": "Duque de Caxias - RJ",
+        "modulos": 25,
+        "potenciaModulo": 550,
+        "economia": 18000
+      },
+      {
+        "image": "/case-maria-paula.png",
+        "tipo": "Residencial",
+        "localizacao": "Niterói",
+        "modulos": 8,
+        "potenciaModulo": 570,
+        "economia": 6000
+      },
+      {
+        "image": "/case-sao-goncalo-2.png",
+        "tipo": "Comercial",
+        "localizacao": "São Gonçalo",
+        "modulos": 57,
+        "potenciaModulo": 550,
+        "economia": 67108
+      }
+    ]
+  },
+  "howItWorks": {
+    "image": "/solar-system-diagram.jpg",
+    "imageAlt": "Diagrama do sistema de energia solar fotovoltaica",
+    "titlePrefix": "Como",
+    "titleHighlight": "funciona",
+    "subtitle": "Entenda o processo de geração da energia solar fotovoltaica",
+    "steps": [
+      {
+        "number": "01",
+        "title": "Captação Solar",
+        "description": "Os painéis fotovoltaicos captam a energia solar e a transformam em corrente elétrica contínua (DC)"
+      },
+      {
+        "number": "02",
+        "title": "Conversão",
+        "description": "A corrente é enviada aos inversores que transformam a corrente contínua em corrente alternada (AC), a mesma fornecida pelas concessionárias."
+      },
+      {
+        "number": "03",
+        "title": "Distribuição",
+        "description": "Os inversores enviam a corrente alternada para o painel central elétrico que alimenta os equipamentos elétricos da instalação."
+      },
+      {
+        "number": "04",
+        "title": "Excedente",
+        "description": "O excedente de energia produzido é devolvido à rede elétrica local."
+      },
+      {
+        "number": "05",
+        "title": "Economia",
+        "description": "A inserção de energia na rede causa a regressão do relógio medidor gerando uma redução do valor da conta de luz."
+      }
+    ]
+  },
+  "proofBar": {
+    "image": "/google-reviews.png",
+    "titlePrefix": "Escolha a empresa",
+    "titleHighlight": "mais bem avaliada",
+    "titleSuffix": "do Rio de Janeiro e não tenha dor de cabeça",
+    "description": "SOMOS a empresa com o maior número de avaliação 5 estrelas no estado do Rio de Janeiro, com equipe de Engenharia e Instalação certificada e especializada. Equipe própria, nada de tercerizados. Receba tudo 100% funcionando - Resolvemos toda a burocracia",
+    "cards": [
+      {
+        "title": "100% de satisfação no Google",
+        "description": "São 409 avaliações, não são 10, 20! 409 clientes fizeram questão de comentar a experiência 5 estrelas."
+      },
+      {
+        "title": "Garantia de 25 anos das placas solares",
+        "description": "Proteção do seu investimento"
+      },
+      {
+        "title": "Instalação Rápida",
+        "description": "Em poucos dias você terá seu sistema funcionando"
+      },
+      {
+        "title": "Líder em painéis solares em {{city}}",
+        "description": "Referência em qualidade e atendimento"
+      },
+      {
+        "title": "Satisfação Garantida",
+        "description": "Garantimos o sistema em plena operação"
+      },
+      {
+        "title": "+ DE 1000",
+        "description": "Clientes atendidos com excelência"
+      }
+    ],
+    "primaryCtaLabel": "Orçamento gratuito",
+    "secondaryCtaLabel": "Fale no Whatsapp",
+    "imageAlt": "5.0 estrelas - 409 avaliações no Google"
+  },
+  "fullService": {
+    "image": "/solar-panels-angle.png",
+    "badge": "Serviço Completo",
+    "titlePrefix": "Cuidamos de",
+    "titleHighlight": "tudo para você",
+    "description": "Do projeto à instalação, com homologação garantida e suporte completo. Atendimento personalizado em todas as etapas do seu sistema solar.",
+    "services": [
+      {
+        "title": "Projeto Completo",
+        "description": "Dimensionamento técnico e análise de viabilidade"
+      },
+      {
+        "title": "Instalação Profissional",
+        "description": "Equipe certificada com NR10 e NR35"
+      },
+      {
+        "title": "Homologação ANEEL",
+        "description": "Cuidamos de toda a documentação e aprovação"
+      },
+      {
+        "title": "Suporte Completo",
+        "description": "Atendimento local e monitoramento contínuo"
+      }
+    ],
+    "ctaLabel": "Fale no Whatsapp",
+    "imageAlt": "Painéis solares fotovoltaicos de alta qualidade"
+  },
+  "faq": {
+    "titlePrefix": "Perguntas",
+    "titleHighlight": "frequentes",
+    "subtitle": "Tudo o que você precisa saber sobre energia solar",
+    "items": []
+  }
+}

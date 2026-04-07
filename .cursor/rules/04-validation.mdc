@@ -1,0 +1,37 @@
+---
+description: Regras para validação mínima obrigatória e formato de encerramento de task.
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Objetivo
+
+Impedir que uma task seja dada como concluída sem validação e sem relatório operacional útil.
+
+# Quando se aplica
+
+Sempre.
+
+# Instruções
+
+- Leia `docs/execution/02-definition-of-done-and-validation.md`.
+- Execute todas as validações mínimas do card.
+- Se alguma validação não puder ser executada, diga isso explicitamente e explique por quê.
+- No encerramento da task, entregue:
+  1. resumo do que foi feito;
+  2. arquivos alterados;
+  3. validações executadas;
+  4. limitações / assunções;
+  5. itens fora do escopo que apareceram.
+
+# Proibições
+
+- Não dizer “feito” sem validação.
+- Não omitir validações falhas.
+- Não esconder dívida ou limitação.
+
+# Expectativas de validação
+
+- Cumprir o mínimo do card.
+- Cumprir o mínimo do documento de definição de pronto.
