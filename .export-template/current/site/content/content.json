@@ -280,5 +280,11 @@
     ],
     "ctaLabel": "Fale no Whatsapp",
     "imageAlt": "Painéis solares fotovoltaicos de alta qualidade"
+  },
+  "faq": {
+    "titlePrefix": "Perguntas",
+    "titleHighlight": "frequentes",
+    "subtitle": "Tudo o que você precisa saber sobre energia solar",
+    "items": []
   }
 }
