@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useClientTemplateInheritance } from '@/hooks/useClientTemplateInheritance';
+import type { BuilderInheritanceApi } from '@/components/studio-builder/inheritance/builderInheritanceApi';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import type { Content } from '@/content/schema';
@@ -31,6 +33,7 @@ import {
 } from '@/components/studio-builder/BuilderSidebar';
 import { BuilderTopbar } from '@/components/studio-builder/BuilderTopbar';
 import { BUILDER_SECTIONS, type BuilderSectionId, type BuilderTabId } from '@/components/studio-builder/builderSections';
+import { ClientTemplateVariablesPanel } from '@/components/studio-builder/ClientTemplateVariablesPanel';
 import { BuilderPreviewPane } from '@/components/studio-builder/preview/BuilderPreviewPane';
 import { normalizeLogoImageLayout } from '@/lib/imageLayout';
 import '@/components/studio-builder/builderTheme.css';
@@ -168,6 +171,38 @@ export default function StudioProjectShell() {
     () => decodeProjectId(clientIdParam ?? projectIdParam),
     [clientIdParam, projectIdParam],
   );
+
+  const {
+    isInheritanceActive,
+    isInherited,
+    inheritanceMeta,
+    resetFieldAsync,
+    resetSectionAsync,
+    isResettingField,
+    isResettingSection,
+  } = useClientTemplateInheritance(projectId || undefined);
+
+  const builderInheritanceApi: BuilderInheritanceApi = useMemo(() => {
+    const overriddenPaths =
+      inheritanceMeta?.mode === 'inheritance' ? inheritanceMeta.overriddenPaths : [];
+    return {
+      isInheritanceActive,
+      isInherited,
+      overriddenPaths,
+      resetFieldAsync,
+      resetSectionAsync,
+      isResettingField,
+      isResettingSection,
+    };
+  }, [
+    isInheritanceActive,
+    isInherited,
+    inheritanceMeta,
+    resetFieldAsync,
+    resetSectionAsync,
+    isResettingField,
+    isResettingSection,
+  ]);
 
   const [project, setProject] = useState<ProjectMetadata | null>(null);
   const [projects, setProjects] = useState<ProjectListItemWithContentLogo[]>([]);
@@ -409,6 +444,18 @@ export default function StudioProjectShell() {
       return next;
     });
   };
+
+  /** Conteúdo já persistido pelo servidor (reset de herança / template-state). */
+  const handleResolvedContentSync = useCallback(
+    (next: Content) => {
+      setContent(next);
+      setHasUnsavedChanges(false);
+      setLastSavedAt(new Date().toISOString());
+      setPreviewRefreshSignal((current) => current + 1);
+      void loadVersions();
+    },
+    [loadVersions],
+  );
 
   const handleSave = useCallback(async () => {
     if (!content || !projectId) {
@@ -1143,6 +1190,30 @@ export default function StudioProjectShell() {
                         placeholder="https://www.exemplo.com"
                       />
                     </div>
+
+                    <ClientTemplateVariablesPanel
+                      yearsInMarket={content.global.yearsInMarket ?? ''}
+                      projectCount={content.global.projectCount ?? ''}
+                      onYearsInMarketChange={(value) =>
+                        handleContentChange((current) => ({
+                          ...current,
+                          global: {
+                            ...current.global,
+                            yearsInMarket: value,
+                          },
+                        }))
+                      }
+                      onProjectCountChange={(value) =>
+                        handleContentChange((current) => ({
+                          ...current,
+                          global: {
+                            ...current.global,
+                            projectCount: value,
+                          },
+                        }))
+                      }
+                    />
+
                     <div className="space-y-1.5">
                       <p className={builderLabelClassName}>Caminho de publicação (base path)</p>
                       <input
@@ -1605,6 +1676,8 @@ export default function StudioProjectShell() {
                 }}
                 onContentChange={handleContentChange}
                 onUploadImage={handleUploadImage}
+                inheritance={builderInheritanceApi}
+                onResolvedContentSync={handleResolvedContentSync}
               />
             )}
           </div>

@@ -1,5 +1,35 @@
 import { useEffect, useState } from 'react';
-import type { Content } from '@/content/schema';
+import { ContentSchema, type Content } from '@/content/schema';
+
+import { resolveTemplateVariablesInString, type TemplateVariableMap } from './templateVariables';
+
+/**
+ * Conteúdo de projeto no Studio deve refletir baseline do template central + variáveis + overrides
+ * (`GET /api/projects/:id/content` no studio-server e, em dev, no vite-plugin-studio).
+ * O runtime aplica ainda `processRuntimeContent` (placeholders remanescentes + BASE_URL em paths).
+ */
+
+/** Detecta URL de GET de conteúdo por projeto (com ou sem prefixo do Vite base). */
+function isProjectScopedContentUrl(candidate: string): boolean {
+  const pathOnly = candidate.split('?')[0] ?? '';
+  return pathOnly.includes('/api/projects/') && pathOnly.endsWith('/content');
+}
+
+/**
+ * Normaliza a resposta do GET de conteúdo do projeto: `Content` puro ou envelope
+ * `{ content, inheritanceMeta }` quando `includeInheritanceMeta` está ativo.
+ */
+export function parseResolvedProjectContentPayload(payload: unknown): Content {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'content' in payload &&
+    'inheritanceMeta' in payload
+  ) {
+    return ContentSchema.parse((payload as { content: unknown }).content);
+  }
+  return ContentSchema.parse(payload);
+}
 
 let cachedContent: Content | null = null;
 const cachedProjectContent = new Map<string, Content>();
@@ -68,7 +98,7 @@ function prefixBasePath(text: string): string {
   return `${base}${text}`;
 }
 
-function getGlobalString(content: unknown, key: keyof Content['global']): string | undefined {
+function getGlobalString(content: unknown, key: string): string | undefined {
   if (!content || typeof content !== 'object') {
     return undefined;
   }
@@ -87,49 +117,56 @@ function getGlobalString(content: unknown, key: keyof Content['global']): string
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function replaceVariables(text: string, content?: unknown): string {
-  if (typeof window === 'undefined') return text;
-
-  const brand = getGlobalString(content, 'brand') || import.meta.env.VITE_BRAND_NAME || 'EFITEC SOLAR';
-  const city = getGlobalString(content, 'city') || import.meta.env.VITE_CITY || 'Niterói - RJ';
-  const whatsappE164 =
-    getGlobalString(content, 'whatsappE164') || import.meta.env.VITE_WPP_E164 || '5521999999999';
-  const siteUrl =
-    getGlobalString(content, 'siteUrl') ||
-    import.meta.env.VITE_PROJECT_DOMAIN ||
-    import.meta.env.VITE_SITE_URL ||
-    'https://www.efitecsolar.com';
-
-  const replaced = text
-    .replace(/\{\{siteUrl\}\}/g, siteUrl)
-    .replace(/\{\{brand\}\}/g, brand)
-    .replace(/\{\{city\}\}/g, city)
-    .replace(/\{\{whatsappE164\}\}/g, whatsappE164);
-
-  return prefixBasePath(replaced);
+function buildTemplateVariableMapFromContent(content?: unknown): TemplateVariableMap {
+  return {
+    brand:
+      getGlobalString(content, 'brand') || import.meta.env.VITE_BRAND_NAME || 'EFITEC SOLAR',
+    city: getGlobalString(content, 'city') || import.meta.env.VITE_CITY || 'Niterói - RJ',
+    whatsappE164:
+      getGlobalString(content, 'whatsappE164') ||
+      import.meta.env.VITE_WPP_E164 ||
+      '5521999999999',
+    siteUrl:
+      getGlobalString(content, 'siteUrl') ||
+      import.meta.env.VITE_PROJECT_DOMAIN ||
+      import.meta.env.VITE_SITE_URL ||
+      'https://www.efitecsolar.com',
+    yearsInMarket:
+      getGlobalString(content, 'yearsInMarket') || import.meta.env.VITE_YEARS_IN_MARKET || '',
+    projectCount:
+      getGlobalString(content, 'projectCount') || import.meta.env.VITE_PROJECT_COUNT || '',
+  };
 }
 
 function processContent(content: unknown, rootContent?: unknown): unknown {
-  if (typeof content === 'string') {
-    return replaceVariables(content, rootContent);
-  }
+  const root = rootContent ?? content;
+  const variables = buildTemplateVariableMapFromContent(root);
 
-  if (Array.isArray(content)) {
-    return content.map((item) => processContent(item, rootContent));
-  }
-
-  if (content && typeof content === 'object') {
-    const processed: Record<string, unknown> = {};
-    const root = rootContent ?? content;
-
-    for (const [key, value] of Object.entries(content)) {
-      processed[key] = processContent(value, root);
+  const walk = (node: unknown): unknown => {
+    if (typeof node === 'string') {
+      const replaced = resolveTemplateVariablesInString(node, variables);
+      if (typeof window === 'undefined') {
+        return replaced;
+      }
+      return prefixBasePath(replaced);
     }
 
-    return processed;
-  }
+    if (Array.isArray(node)) {
+      return node.map((item) => walk(item));
+    }
 
-  return content;
+    if (node && typeof node === 'object') {
+      const processed: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(node)) {
+        processed[key] = walk(value);
+      }
+      return processed;
+    }
+
+    return node;
+  };
+
+  return walk(content);
 }
 
 function processRuntimeContent(content: Content): Content {
@@ -157,8 +194,11 @@ async function tryReadContent(candidate: string): Promise<Content | null> {
       return null;
     }
 
-    const payload = (await response.json()) as Content;
-    return processRuntimeContent(payload);
+    const payload: unknown = await response.json();
+    const parsed = isProjectScopedContentUrl(candidate)
+      ? parseResolvedProjectContentPayload(payload)
+      : ContentSchema.parse(payload);
+    return processRuntimeContent(parsed);
   } catch {
     return null;
   }

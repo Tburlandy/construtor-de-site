@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Check, LayoutTemplate, Palette, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { Benefit, Content, HiddenPageSectionId, ImageLayout, Project } from '@/content/schema';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -6,6 +6,10 @@ import { Switch } from '@/components/ui/switch';
 import { isPageSectionVisible } from '@/lib/sectionVisibility';
 import { normalizeCoverImageLayout } from '@/lib/imageLayout';
 import { cn } from '@/lib/utils';
+import { BuilderInheritedFieldChrome } from './inheritance/BuilderInheritedFieldChrome';
+import { BuilderInheritanceControls } from './inheritance/BuilderInheritanceControls';
+import { BuilderSectionInheritanceToolbar } from './inheritance/BuilderSectionInheritanceToolbar';
+import type { BuilderInheritanceApi } from './inheritance/builderInheritanceApi';
 import { BUILDER_SECTIONS, type BuilderSectionId, type BuilderTabId } from './builderSections';
 import {
   BuilderImageField,
@@ -30,6 +34,10 @@ interface BuilderEditorPanelProps {
   onContentChange: (updater: (current: Content) => Content) => void;
   onUploadImage: (file: File) => Promise<string>;
   onCreateLayout?: () => void;
+  /** Herança Estilo 1: badges e reset (opcional). */
+  inheritance?: BuilderInheritanceApi;
+  /** Após reset de campo/seção o servidor devolve `Content` resolvido — sincroniza sem marcar rascunho. */
+  onResolvedContentSync?: (content: Content) => void;
 }
 
 function clampToPositiveInteger(value: string): number {
@@ -179,7 +187,27 @@ export function BuilderEditorPanel({
   onContentChange,
   onUploadImage,
   onCreateLayout,
+  inheritance,
+  onResolvedContentSync,
 }: BuilderEditorPanelProps) {
+  const applyResolvedContent = useCallback(
+    (next: Content) => {
+      if (onResolvedContentSync) {
+        onResolvedContentSync(next);
+      } else {
+        onContentChange(() => next);
+      }
+    },
+    [onContentChange, onResolvedContentSync],
+  );
+
+  const renderInheritanceToolbar = (sid: BuilderSectionId) => (
+    <BuilderSectionInheritanceToolbar
+      builderSectionId={sid}
+      inheritance={inheritance}
+      onResetSuccess={applyResolvedContent}
+    />
+  );
   const [jsonLdDraft, setJsonLdDraft] = useState(() => JSON.stringify(content.seo.jsonLd ?? {}, null, 2));
   const [jsonLdError, setJsonLdError] = useState<string | null>(null);
   const [openSectionId, setOpenSectionId] = useState<BuilderSectionId | undefined>(activeSectionId);
@@ -463,8 +491,15 @@ export function BuilderEditorPanel({
     if (sectionId === 'global') {
       return (
         <div className="grid gap-4">
+          {renderInheritanceToolbar('global')}
+          <BuilderInheritedFieldChrome
+            label="Menu do cabeçalho"
+            contentPath="header.menu"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
           <div className="space-y-3">
-            <p className={builderLabelClassName}>Menu do cabeçalho</p>
             {(content.header?.menu?.length ? content.header.menu : DEFAULT_HEADER_MENU_ITEMS).map((item, index) => (
               <div
                 key={`header-menu-item-${index}`}
@@ -501,31 +536,47 @@ export function BuilderEditorPanel({
               </div>
             ))}
           </div>
+          </BuilderInheritedFieldChrome>
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>CTA desktop</p>
+            <BuilderInheritedFieldChrome
+              label="CTA desktop"
+              contentPath="header.desktopCtaLabel"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.header?.desktopCtaLabel ?? 'Fale no Whatsapp'}
                 onChange={(event) => setHeaderField('desktopCtaLabel', event.target.value)}
               />
-            </div>
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>CTA mobile</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="CTA mobile"
+              contentPath="header.mobileCtaLabel"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.header?.mobileCtaLabel ?? 'Fale no Whatsapp'}
                 onChange={(event) => setHeaderField('mobileCtaLabel', event.target.value)}
               />
-            </div>
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>CTA mobile compacto</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="CTA mobile compacto"
+              contentPath="header.mobileCompactCtaLabel"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.header?.mobileCompactCtaLabel ?? 'WhatsApp'}
                 onChange={(event) => setHeaderField('mobileCompactCtaLabel', event.target.value)}
               />
-            </div>
+            </BuilderInheritedFieldChrome>
           </div>
         </div>
       );
@@ -534,40 +585,72 @@ export function BuilderEditorPanel({
     if (sectionId === 'seo') {
       return (
         <div className="grid gap-4">
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Título SEO</p>
+          {renderInheritanceToolbar('seo')}
+          <BuilderInheritedFieldChrome
+            label="Título SEO"
+            contentPath="seo.title"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.seo.title}
               onChange={(event) => setSeoField('title', event.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Descrição</p>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="Descrição"
+            contentPath="seo.description"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <textarea
               className={builderTextAreaClassName}
               rows={3}
               value={content.seo.description}
               onChange={(event) => setSeoField('description', event.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>URL canônica</p>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="URL canônica"
+            contentPath="seo.canonical"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.seo.canonical}
               onChange={(event) => setSeoField('canonical', event.target.value)}
             />
-          </div>
-          <BuilderImageField
-            label="Imagem OG"
-            description="Usada em compartilhamentos de Open Graph."
-            value={content.seo.ogImage}
-            onChange={(nextValue) => setSeoField('ogImage', nextValue)}
-            onUploadImage={onUploadImage}
-          />
+          </BuilderInheritedFieldChrome>
           <div className="space-y-2">
-            <p className={builderLabelClassName}>JSON-LD</p>
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <p className={builderLabelClassName}>Imagem OG</p>
+              <BuilderInheritanceControls
+                contentPath="seo.ogImage"
+                inheritance={inheritance}
+                onResetSuccess={applyResolvedContent}
+                disabled={inheritance?.isResettingField}
+              />
+            </div>
+            <BuilderImageField
+              label=""
+              description="Usada em compartilhamentos de Open Graph."
+              value={content.seo.ogImage}
+              onChange={(nextValue) => setSeoField('ogImage', nextValue)}
+              onUploadImage={onUploadImage}
+            />
+          </div>
+          <BuilderInheritedFieldChrome
+            label="JSON-LD"
+            contentPath="seo.jsonLd"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <textarea
               className={cn(builderTextAreaClassName, 'font-mono text-[13px]')}
               rows={10}
@@ -579,7 +662,7 @@ export function BuilderEditorPanel({
               onBlur={commitJsonLd}
             />
             {jsonLdError ? <p className="text-xs text-[var(--builder-danger)]">{jsonLdError}</p> : null}
-          </div>
+          </BuilderInheritedFieldChrome>
         </div>
       );
     }
@@ -588,51 +671,83 @@ export function BuilderEditorPanel({
       const heroStats = content.hero.stats?.length ? content.hero.stats : DEFAULT_HERO_STATS;
       return (
         <div className="grid gap-4">
+          {renderInheritanceToolbar('hero')}
           {renderPageSectionVisibilityRow('hero')}
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Headline</p>
+          <BuilderInheritedFieldChrome
+            label="Headline"
+            contentPath="hero.headline"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.hero.headline}
               onChange={(event) => setHeroField('headline', event.target.value)}
               placeholder="Use {{city}} quando quiser interpolar cidade"
             />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Subheadline</p>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="Subheadline"
+            contentPath="hero.subheadline"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <textarea
               className={builderTextAreaClassName}
               rows={3}
               value={content.hero.subheadline}
               onChange={(event) => setHeroField('subheadline', event.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>CTA principal</p>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="CTA principal"
+            contentPath="hero.ctaLabel"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.hero.ctaLabel}
               onChange={(event) => setHeroField('ctaLabel', event.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>CTA secundário</p>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="CTA secundário"
+            contentPath="hero.secondaryCtaLabel"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.hero.secondaryCtaLabel ?? 'Fale no Whatsapp'}
               onChange={(event) => setHeroField('secondaryCtaLabel', event.target.value)}
             />
-          </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>CTA flutuante</p>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="CTA flutuante"
+            contentPath="hero.floatingCtaLabel"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.hero.floatingCtaLabel ?? 'WhatsApp'}
               onChange={(event) => setHeroField('floatingCtaLabel', event.target.value)}
             />
-          </div>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="Indicadores do Hero"
+            contentPath="hero.stats"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
           <div className="space-y-3">
-            <p className={builderLabelClassName}>Indicadores do Hero</p>
             <div className="space-y-2">
               {heroStats.map((item, index) => (
                 <div
@@ -669,19 +784,39 @@ export function BuilderEditorPanel({
               ))}
             </div>
           </div>
-          <BuilderImageField
-            label="Imagem de fundo"
-            description="Formato recomendado: WebP otimizado."
-            value={content.hero.background}
-            onChange={(nextValue) => setHeroField('background', nextValue)}
-            onUploadImage={onUploadImage}
-          />
-          <BuilderImageLayoutControls
-            mode="cover"
-            value={heroImageLayoutControlValue}
-            onChange={(nextValue) => updateCoverLayout('heroBackground', nextValue)}
-            onReset={() => setImageLayoutField('heroBackground', undefined)}
-          />
+          </BuilderInheritedFieldChrome>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <p className={builderLabelClassName}>Imagem de fundo</p>
+              <BuilderInheritanceControls
+                contentPath="hero.background"
+                inheritance={inheritance}
+                onResetSuccess={applyResolvedContent}
+                disabled={inheritance?.isResettingField}
+              />
+            </div>
+            <BuilderImageField
+              label=""
+              description="Formato recomendado: WebP otimizado."
+              value={content.hero.background}
+              onChange={(nextValue) => setHeroField('background', nextValue)}
+              onUploadImage={onUploadImage}
+            />
+          </div>
+          <BuilderInheritedFieldChrome
+            label="Recorte (layout da imagem de fundo)"
+            contentPath="imageLayout"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
+            <BuilderImageLayoutControls
+              mode="cover"
+              value={heroImageLayoutControlValue}
+              onChange={(nextValue) => updateCoverLayout('heroBackground', nextValue)}
+              onReset={() => setImageLayoutField('heroBackground', undefined)}
+            />
+          </BuilderInheritedFieldChrome>
         </div>
       );
     }
@@ -836,10 +971,16 @@ export function BuilderEditorPanel({
       const cards = content.proofBar?.cards?.length ? content.proofBar.cards : DEFAULT_PROOFBAR_CARDS;
       return (
         <div className="grid gap-4">
+          {renderInheritanceToolbar('proofBar')}
           {renderPageSectionVisibilityRow('proofBar')}
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Título (prefixo)</p>
+            <BuilderInheritedFieldChrome
+              label="Título (prefixo)"
+              contentPath="proofBar.titlePrefix"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.proofBar?.titlePrefix ?? 'Escolha a empresa'}
@@ -850,9 +991,14 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Título (destaque)</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="Título (destaque)"
+              contentPath="proofBar.titleHighlight"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.proofBar?.titleHighlight ?? 'mais bem avaliada'}
@@ -863,9 +1009,14 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Título (sufixo)</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="Título (sufixo)"
+              contentPath="proofBar.titleSuffix"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.proofBar?.titleSuffix ?? 'do Rio de Janeiro e não tenha dor de cabeça'}
@@ -876,10 +1027,15 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
+            </BuilderInheritedFieldChrome>
           </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Descrição principal</p>
+          <BuilderInheritedFieldChrome
+            label="Descrição principal"
+            contentPath="proofBar.description"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <textarea
               className={builderTextAreaClassName}
               rows={4}
@@ -894,9 +1050,15 @@ export function BuilderEditorPanel({
                 }))
               }
             />
-          </div>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="Cards"
+            contentPath="proofBar.cards"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
           <div className="space-y-3">
-            <p className={builderLabelClassName}>Cards</p>
             {cards.map((card, index) => (
               <div
                 key={`proofbar-card-${index}`}
@@ -938,9 +1100,15 @@ export function BuilderEditorPanel({
               </div>
             ))}
           </div>
+          </BuilderInheritedFieldChrome>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>CTA primário</p>
+            <BuilderInheritedFieldChrome
+              label="CTA primário"
+              contentPath="proofBar.primaryCtaLabel"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.proofBar?.primaryCtaLabel ?? 'Orçamento gratuito'}
@@ -951,9 +1119,14 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>CTA secundário</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="CTA secundário"
+              contentPath="proofBar.secondaryCtaLabel"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.proofBar?.secondaryCtaLabel ?? 'Fale no Whatsapp'}
@@ -964,21 +1137,37 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
+            </BuilderInheritedFieldChrome>
           </div>
-          <BuilderImageField
-            label="Imagem da prova social"
-            value={content.proofBar?.image ?? ''}
-            onUploadImage={onUploadImage}
-            onChange={(nextValue) =>
-              onContentChange((current) => ({
-                ...current,
-                proofBar: { ...(current.proofBar ?? { image: '' }), image: nextValue },
-              }))
-            }
-          />
           <div className="space-y-2">
-            <p className={builderLabelClassName}>Alt da imagem</p>
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <p className={builderLabelClassName}>Imagem da prova social</p>
+              <BuilderInheritanceControls
+                contentPath="proofBar.image"
+                inheritance={inheritance}
+                onResetSuccess={applyResolvedContent}
+                disabled={inheritance?.isResettingField}
+              />
+            </div>
+            <BuilderImageField
+              label=""
+              value={content.proofBar?.image ?? ''}
+              onUploadImage={onUploadImage}
+              onChange={(nextValue) =>
+                onContentChange((current) => ({
+                  ...current,
+                  proofBar: { ...(current.proofBar ?? { image: '' }), image: nextValue },
+                }))
+              }
+            />
+          </div>
+          <BuilderInheritedFieldChrome
+            label="Alt da imagem"
+            contentPath="proofBar.imageAlt"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.proofBar?.imageAlt ?? '5.0 estrelas - 409 avaliações no Google'}
@@ -989,13 +1178,21 @@ export function BuilderEditorPanel({
                 }))
               }
             />
-          </div>
-          <BuilderImageLayoutControls
-            mode="cover"
-            value={proofBarImageLayoutControlValue}
-            onChange={(nextValue) => updateCoverLayout('proofBar', nextValue)}
-            onReset={() => setImageLayoutField('proofBar', undefined)}
-          />
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="Recorte da imagem (prova social)"
+            contentPath="imageLayout"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
+            <BuilderImageLayoutControls
+              mode="cover"
+              value={proofBarImageLayoutControlValue}
+              onChange={(nextValue) => updateCoverLayout('proofBar', nextValue)}
+              onReset={() => setImageLayoutField('proofBar', undefined)}
+            />
+          </BuilderInheritedFieldChrome>
         </div>
       );
     }
@@ -1008,9 +1205,15 @@ export function BuilderEditorPanel({
           : DEFAULT_FULL_SERVICE_ITEMS;
       return (
         <div className="grid gap-4">
+          {renderInheritanceToolbar('fullService')}
           {renderPageSectionVisibilityRow('fullService')}
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Selo</p>
+          <BuilderInheritedFieldChrome
+            label="Selo"
+            contentPath="fullService.badge"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.fullService?.badge ?? 'Serviço Completo'}
@@ -1021,10 +1224,15 @@ export function BuilderEditorPanel({
                 }))
               }
             />
-          </div>
+          </BuilderInheritedFieldChrome>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Título (prefixo)</p>
+            <BuilderInheritedFieldChrome
+              label="Título (prefixo)"
+              contentPath="fullService.titlePrefix"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.fullService?.titlePrefix ?? 'Cuidamos de'}
@@ -1035,9 +1243,14 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Título (destaque)</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="Título (destaque)"
+              contentPath="fullService.titleHighlight"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.fullService?.titleHighlight ?? 'tudo para você'}
@@ -1048,10 +1261,15 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
+            </BuilderInheritedFieldChrome>
           </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Descrição</p>
+          <BuilderInheritedFieldChrome
+            label="Descrição"
+            contentPath="fullService.description"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <textarea
               className={builderTextAreaClassName}
               rows={3}
@@ -1066,9 +1284,15 @@ export function BuilderEditorPanel({
                 }))
               }
             />
-          </div>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="Lista de serviços"
+            contentPath="fullService.services"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
           <div className="space-y-3">
-            <p className={builderLabelClassName}>Lista de serviços</p>
             {services.map((service, index) => (
               <div
                 key={`full-service-item-${index}`}
@@ -1112,8 +1336,14 @@ export function BuilderEditorPanel({
               </div>
             ))}
           </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>CTA</p>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="CTA"
+            contentPath="fullService.ctaLabel"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.fullService?.ctaLabel ?? 'Fale no Whatsapp'}
@@ -1124,20 +1354,36 @@ export function BuilderEditorPanel({
                 }))
               }
             />
-          </div>
-          <BuilderImageField
-            label="Imagem da seção"
-            value={content.fullService?.image ?? ''}
-            onUploadImage={onUploadImage}
-            onChange={(nextValue) =>
-              onContentChange((current) => ({
-                ...current,
-                fullService: { ...(current.fullService ?? { image: '' }), image: nextValue },
-              }))
-            }
-          />
+          </BuilderInheritedFieldChrome>
           <div className="space-y-2">
-            <p className={builderLabelClassName}>Alt da imagem</p>
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <p className={builderLabelClassName}>Imagem da seção</p>
+              <BuilderInheritanceControls
+                contentPath="fullService.image"
+                inheritance={inheritance}
+                onResetSuccess={applyResolvedContent}
+                disabled={inheritance?.isResettingField}
+              />
+            </div>
+            <BuilderImageField
+              label=""
+              value={content.fullService?.image ?? ''}
+              onUploadImage={onUploadImage}
+              onChange={(nextValue) =>
+                onContentChange((current) => ({
+                  ...current,
+                  fullService: { ...(current.fullService ?? { image: '' }), image: nextValue },
+                }))
+              }
+            />
+          </div>
+          <BuilderInheritedFieldChrome
+            label="Alt da imagem"
+            contentPath="fullService.imageAlt"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.fullService?.imageAlt ?? 'Painéis solares fotovoltaicos de alta qualidade'}
@@ -1148,13 +1394,21 @@ export function BuilderEditorPanel({
                 }))
               }
             />
-          </div>
-          <BuilderImageLayoutControls
-            mode="cover"
-            value={fullServiceImageLayoutControlValue}
-            onChange={(nextValue) => updateCoverLayout('fullService', nextValue)}
-            onReset={() => setImageLayoutField('fullService', undefined)}
-          />
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="Recorte da imagem (serviço completo)"
+            contentPath="imageLayout"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
+            <BuilderImageLayoutControls
+              mode="cover"
+              value={fullServiceImageLayoutControlValue}
+              onChange={(nextValue) => updateCoverLayout('fullService', nextValue)}
+              onReset={() => setImageLayoutField('fullService', undefined)}
+            />
+          </BuilderInheritedFieldChrome>
         </div>
       );
     }
@@ -1163,10 +1417,16 @@ export function BuilderEditorPanel({
       const steps = content.howItWorks?.steps?.length ? content.howItWorks.steps : DEFAULT_HOW_IT_WORKS_STEPS;
       return (
         <div className="grid gap-4">
+          {renderInheritanceToolbar('howItWorks')}
           {renderPageSectionVisibilityRow('howItWorks')}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Título (prefixo)</p>
+            <BuilderInheritedFieldChrome
+              label="Título (prefixo)"
+              contentPath="howItWorks.titlePrefix"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.howItWorks?.titlePrefix ?? 'Como'}
@@ -1177,9 +1437,14 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
-            <div className="space-y-2">
-              <p className={builderLabelClassName}>Título (destaque)</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="Título (destaque)"
+              contentPath="howItWorks.titleHighlight"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.howItWorks?.titleHighlight ?? 'funciona'}
@@ -1190,10 +1455,15 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
+            </BuilderInheritedFieldChrome>
           </div>
-          <div className="space-y-2">
-            <p className={builderLabelClassName}>Subtítulo</p>
+          <BuilderInheritedFieldChrome
+            label="Subtítulo"
+            contentPath="howItWorks.subtitle"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <textarea
               className={builderTextAreaClassName}
               rows={2}
@@ -1205,9 +1475,15 @@ export function BuilderEditorPanel({
                 }))
               }
             />
-          </div>
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="Passos"
+            contentPath="howItWorks.steps"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
           <div className="space-y-3">
-            <p className={builderLabelClassName}>Passos</p>
             {steps.map((step, index) => (
               <div
                 key={`how-it-works-step-${index}`}
@@ -1266,19 +1542,36 @@ export function BuilderEditorPanel({
               </div>
             ))}
           </div>
-          <BuilderImageField
-            label="Imagem principal"
-            value={content.howItWorks?.image ?? ''}
-            onUploadImage={onUploadImage}
-            onChange={(nextValue) =>
-              onContentChange((current) => ({
-                ...current,
-                howItWorks: { ...(current.howItWorks ?? { image: '' }), image: nextValue },
-              }))
-            }
-          />
+          </BuilderInheritedFieldChrome>
           <div className="space-y-2">
-            <p className={builderLabelClassName}>Alt da imagem</p>
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <p className={builderLabelClassName}>Imagem principal</p>
+              <BuilderInheritanceControls
+                contentPath="howItWorks.image"
+                inheritance={inheritance}
+                onResetSuccess={applyResolvedContent}
+                disabled={inheritance?.isResettingField}
+              />
+            </div>
+            <BuilderImageField
+              label=""
+              value={content.howItWorks?.image ?? ''}
+              onUploadImage={onUploadImage}
+              onChange={(nextValue) =>
+                onContentChange((current) => ({
+                  ...current,
+                  howItWorks: { ...(current.howItWorks ?? { image: '' }), image: nextValue },
+                }))
+              }
+            />
+          </div>
+          <BuilderInheritedFieldChrome
+            label="Alt da imagem"
+            contentPath="howItWorks.imageAlt"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <input
               className={builderInputClassName}
               value={content.howItWorks?.imageAlt ?? 'Diagrama do sistema de energia solar fotovoltaica'}
@@ -1289,13 +1582,21 @@ export function BuilderEditorPanel({
                 }))
               }
             />
-          </div>
-          <BuilderImageLayoutControls
-            mode="cover"
-            value={howItWorksImageLayoutControlValue}
-            onChange={(nextValue) => updateCoverLayout('howItWorks', nextValue)}
-            onReset={() => setImageLayoutField('howItWorks', undefined)}
-          />
+          </BuilderInheritedFieldChrome>
+          <BuilderInheritedFieldChrome
+            label="Recorte da imagem (como funciona)"
+            contentPath="imageLayout"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
+            <BuilderImageLayoutControls
+              mode="cover"
+              value={howItWorksImageLayoutControlValue}
+              onChange={(nextValue) => updateCoverLayout('howItWorks', nextValue)}
+              onReset={() => setImageLayoutField('howItWorks', undefined)}
+            />
+          </BuilderInheritedFieldChrome>
         </div>
       );
     }
@@ -1303,10 +1604,16 @@ export function BuilderEditorPanel({
     if (sectionId === 'showcase') {
       return (
         <div className="space-y-4">
+          {renderInheritanceToolbar('showcase')}
           {renderPageSectionVisibilityRow('showcase')}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <p className={builderLabelClassName}>Título (destaque)</p>
+            <BuilderInheritedFieldChrome
+              label="Título (destaque)"
+              contentPath="showcase.titleHighlight"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.showcase.titleHighlight ?? '+ 1000'}
@@ -1320,9 +1627,14 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
-            <div className="space-y-1.5">
-              <p className={builderLabelClassName}>Título (sufixo)</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="Título (sufixo)"
+              contentPath="showcase.titleSuffix"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.showcase.titleSuffix ?? 'projetos realizados'}
@@ -1336,10 +1648,15 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
+            </BuilderInheritedFieldChrome>
           </div>
-          <div className="space-y-1.5">
-            <p className={builderLabelClassName}>Subtítulo</p>
+          <BuilderInheritedFieldChrome
+            label="Subtítulo"
+            contentPath="showcase.subtitle"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
             <textarea
               className={builderTextAreaClassName}
               rows={2}
@@ -1354,10 +1671,15 @@ export function BuilderEditorPanel({
                 }))
               }
             />
-          </div>
+          </BuilderInheritedFieldChrome>
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <p className={builderLabelClassName}>Rótulo localização</p>
+            <BuilderInheritedFieldChrome
+              label="Rótulo localização"
+              contentPath="showcase.labels.location"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.showcase.labels?.location ?? 'Localização'}
@@ -1375,9 +1697,14 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
-            <div className="space-y-1.5">
-              <p className={builderLabelClassName}>Rótulo sistema</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="Rótulo sistema"
+              contentPath="showcase.labels.system"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.showcase.labels?.system ?? 'Sistema'}
@@ -1395,9 +1722,14 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
-            <div className="space-y-1.5">
-              <p className={builderLabelClassName}>Rótulo economia</p>
+            </BuilderInheritedFieldChrome>
+            <BuilderInheritedFieldChrome
+              label="Rótulo economia"
+              contentPath="showcase.labels.annualSavings"
+              inheritance={inheritance}
+              onResetSuccess={applyResolvedContent}
+              isBusy={inheritance?.isResettingField}
+            >
               <input
                 className={builderInputClassName}
                 value={content.showcase.labels?.annualSavings ?? 'Economia anual'}
@@ -1415,139 +1747,155 @@ export function BuilderEditorPanel({
                   }))
                 }
               />
-            </div>
+            </BuilderInheritedFieldChrome>
           </div>
 
           {content.showcase.projects.length === 0 ? (
             <p className={builderHintClassName}>Nenhum projeto cadastrado no showcase.</p>
           ) : null}
 
-          {content.showcase.projects.map((project, index) => (
-            <div key={`showcase-project-${index}`} className="rounded-[14px] border border-[var(--builder-border)] bg-[rgba(15,23,42,0.55)] p-3">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-semibold text-[var(--builder-text-primary)]">Projeto {index + 1}</p>
-                <button
-                  type="button"
-                  className={cn(builderSecondaryButtonClassName, 'border-[rgba(248,113,113,0.4)] text-[var(--builder-danger)] hover:bg-[var(--builder-danger-surface)]')}
-                  onClick={() => removeShowcaseProject(index)}
+          <BuilderInheritedFieldChrome
+            label="Projetos em destaque"
+            contentPath="showcase.projects"
+            inheritance={inheritance}
+            onResetSuccess={applyResolvedContent}
+            isBusy={inheritance?.isResettingField}
+          >
+            <div className="space-y-3">
+              {content.showcase.projects.map((project, index) => (
+                <div
+                  key={`showcase-project-${index}`}
+                  className="rounded-[14px] border border-[var(--builder-border)] bg-[rgba(15,23,42,0.55)] p-3"
                 >
-                  <Trash2 className="h-4 w-4" />
-                  Remover
-                </button>
-              </div>
-
-              <div className="grid gap-3">
-                <BuilderImageField
-                  label="Imagem"
-                  value={project.image}
-                  onUploadImage={onUploadImage}
-                  onChange={(nextValue) =>
-                    updateShowcaseProject(index, (current) => ({ ...current, image: nextValue }))
-                  }
-                />
-                <BuilderImageLayoutControls
-                  mode="cover"
-                  value={normalizeCoverImageLayout(project.imageLayout)}
-                  onChange={(nextValue) =>
-                    updateShowcaseProject(index, (current) => ({
-                      ...current,
-                      imageLayout: {
-                        scale: nextValue.scale,
-                        x: nextValue.x,
-                        y: nextValue.y,
-                      },
-                    }))
-                  }
-                  onReset={() =>
-                    updateShowcaseProject(index, (current) => ({
-                      ...current,
-                      imageLayout: undefined,
-                    }))
-                  }
-                />
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <p className={builderLabelClassName}>Tipo</p>
-                    <select
-                      className={builderSelectClassName}
-                      value={project.tipo}
-                      onChange={(event) =>
-                        updateShowcaseProject(index, (current) => ({
-                          ...current,
-                          tipo: event.target.value as Project['tipo'],
-                        }))
-                      }
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-[var(--builder-text-primary)]">Projeto {index + 1}</p>
+                    <button
+                      type="button"
+                      className={cn(
+                        builderSecondaryButtonClassName,
+                        'border-[rgba(248,113,113,0.4)] text-[var(--builder-danger)] hover:bg-[var(--builder-danger-surface)]',
+                      )}
+                      onClick={() => removeShowcaseProject(index)}
                     >
-                      <option value="Residencial">Residencial</option>
-                      <option value="Comercial">Comercial</option>
-                    </select>
+                      <Trash2 className="h-4 w-4" />
+                      Remover
+                    </button>
                   </div>
-                  <div className="space-y-1.5">
-                    <p className={builderLabelClassName}>Localização</p>
-                    <input
-                      className={builderInputClassName}
-                      value={project.localizacao}
-                      onChange={(event) =>
-                        updateShowcaseProject(index, (current) => ({
-                          ...current,
-                          localizacao: event.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <p className={builderLabelClassName}>Módulos</p>
-                    <input
-                      className={builderInputClassName}
-                      value={project.modulos}
-                      type="number"
-                      min={0}
-                      onChange={(event) =>
+                  <div className="grid gap-3">
+                    <BuilderImageField
+                      label="Imagem"
+                      value={project.image}
+                      onUploadImage={onUploadImage}
+                      onChange={(nextValue) =>
+                        updateShowcaseProject(index, (current) => ({ ...current, image: nextValue }))
+                      }
+                    />
+                    <BuilderImageLayoutControls
+                      mode="cover"
+                      value={normalizeCoverImageLayout(project.imageLayout)}
+                      onChange={(nextValue) =>
                         updateShowcaseProject(index, (current) => ({
                           ...current,
-                          modulos: clampToPositiveInteger(event.target.value),
+                          imageLayout: {
+                            scale: nextValue.scale,
+                            x: nextValue.x,
+                            y: nextValue.y,
+                          },
+                        }))
+                      }
+                      onReset={() =>
+                        updateShowcaseProject(index, (current) => ({
+                          ...current,
+                          imageLayout: undefined,
                         }))
                       }
                     />
-                  </div>
-                  <div className="space-y-1.5">
-                    <p className={builderLabelClassName}>Potência (W)</p>
-                    <input
-                      className={builderInputClassName}
-                      value={project.potenciaModulo}
-                      type="number"
-                      min={0}
-                      onChange={(event) =>
-                        updateShowcaseProject(index, (current) => ({
-                          ...current,
-                          potenciaModulo: clampToPositiveInteger(event.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <p className={builderLabelClassName}>Economia anual</p>
-                    <input
-                      className={builderInputClassName}
-                      value={project.economia}
-                      type="number"
-                      min={0}
-                      onChange={(event) =>
-                        updateShowcaseProject(index, (current) => ({
-                          ...current,
-                          economia: clampToPositiveInteger(event.target.value),
-                        }))
-                      }
-                    />
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <p className={builderLabelClassName}>Tipo</p>
+                        <select
+                          className={builderSelectClassName}
+                          value={project.tipo}
+                          onChange={(event) =>
+                            updateShowcaseProject(index, (current) => ({
+                              ...current,
+                              tipo: event.target.value as Project['tipo'],
+                            }))
+                          }
+                        >
+                          <option value="Residencial">Residencial</option>
+                          <option value="Comercial">Comercial</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className={builderLabelClassName}>Localização</p>
+                        <input
+                          className={builderInputClassName}
+                          value={project.localizacao}
+                          onChange={(event) =>
+                            updateShowcaseProject(index, (current) => ({
+                              ...current,
+                              localizacao: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div className="space-y-1.5">
+                        <p className={builderLabelClassName}>Módulos</p>
+                        <input
+                          className={builderInputClassName}
+                          value={project.modulos}
+                          type="number"
+                          min={0}
+                          onChange={(event) =>
+                            updateShowcaseProject(index, (current) => ({
+                              ...current,
+                              modulos: clampToPositiveInteger(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className={builderLabelClassName}>Potência (W)</p>
+                        <input
+                          className={builderInputClassName}
+                          value={project.potenciaModulo}
+                          type="number"
+                          min={0}
+                          onChange={(event) =>
+                            updateShowcaseProject(index, (current) => ({
+                              ...current,
+                              potenciaModulo: clampToPositiveInteger(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className={builderLabelClassName}>Economia anual</p>
+                        <input
+                          className={builderInputClassName}
+                          value={project.economia}
+                          type="number"
+                          min={0}
+                          onChange={(event) =>
+                            updateShowcaseProject(index, (current) => ({
+                              ...current,
+                              economia: clampToPositiveInteger(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ))}
             </div>
-          ))}
+          </BuilderInheritedFieldChrome>
 
           <button type="button" className={builderSecondaryButtonClassName} onClick={addShowcaseProject}>
             <Plus className="h-4 w-4" />

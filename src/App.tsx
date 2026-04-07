@@ -48,6 +48,12 @@ const studioEnabled = __STUDIO_ENABLED__;
 const StudioAdminEntry = studioEnabled ? lazy(() => import("./pages/StudioAdminEntry")) : null;
 const StudioProjectShell = studioEnabled ? lazy(() => import("./pages/StudioProjectShell")) : null;
 const StudioProjectPreview = studioEnabled ? lazy(() => import("./pages/StudioProjectPreview")) : null;
+const StudioBaseTemplatePageLazy = studioEnabled ? lazy(() => import("./pages/StudioBaseTemplatePage")) : null;
+const StudioBaseTemplatePreviewLazy = studioEnabled
+  ? lazy(() =>
+      import("./pages/StudioBaseTemplatePage").then((mod) => ({ default: mod.StudioBaseTemplatePreview })),
+    )
+  : null;
 
 const StudioRouteFallback = (
   <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
@@ -68,8 +74,21 @@ const App = () => (
             <Route path="/energia-solar-em/:slug" element={<CityPage />} />
             <Route path="/cadastro-sdr" element={<SdrForm />} />
             <Route path="/teste" element={<Teste />} />
-            {studioEnabled && StudioAdminEntry && StudioProjectShell && StudioProjectPreview ? (
+            {studioEnabled &&
+            StudioAdminEntry &&
+            StudioProjectShell &&
+            StudioProjectPreview &&
+            StudioBaseTemplatePageLazy &&
+            StudioBaseTemplatePreviewLazy ? (
               <>
+                <Route
+                  path="/preview/studio-base-template"
+                  element={
+                    <Suspense fallback={StudioRouteFallback}>
+                      <StudioBaseTemplatePreviewLazy />
+                    </Suspense>
+                  }
+                />
                 <Route
                   path="/preview/:clientId"
                   element={
@@ -91,6 +110,18 @@ const App = () => (
                   element={
                     <Suspense fallback={StudioRouteFallback}>
                       <StudioAdminEntry />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/construtor/template-base"
+                  element={<Navigate to="/construtor/template-base/style-1" replace />}
+                />
+                <Route
+                  path="/construtor/template-base/style-1"
+                  element={
+                    <Suspense fallback={StudioRouteFallback}>
+                      <StudioBaseTemplatePageLazy />
                     </Suspense>
                   }
                 />

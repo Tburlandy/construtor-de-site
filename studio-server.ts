@@ -20,8 +20,29 @@ import {
   createSupabaseProjectPublicationRepository,
   createSupabaseProjectSeoConfigRepository,
   createSupabaseProjectVersionRepository,
+  createSupabaseStudioBaseTemplateRepository,
   createSupabaseStudioClient,
+  createSupabaseStudioClientTemplateStateRepository,
 } from './src/platform/repositories/supabaseStudioRepositories.js';
+import {
+  STUDIO_BASE_TEMPLATE_KEY_STYLE_1,
+  createStudioBaseTemplateRepository,
+} from './src/platform/repositories/studioBaseTemplateRepository.js';
+import { createStudioClientTemplateStateRepository } from './src/platform/repositories/studioClientTemplateStateRepository.js';
+import {
+  StudioTemplateContentPathSchema,
+  type StudioClientTemplateStateRecord,
+} from './src/platform/contracts/studioTemplateInheritance.js';
+import {
+  buildOverridesFromResolvedContent,
+  removeOverridePath,
+  resolveClientContent,
+  summarizeGlobalDivergenceAcrossClients,
+} from './src/platform/studio/templateInheritanceService.js';
+import {
+  SUPPORTED_TEMPLATE_VARIABLE_KEYS,
+  type TemplateVariableMap,
+} from './src/lib/templateVariables.js';
 import {
   buildProjectContentRecord,
   parseGlobalSiteContentJson,
@@ -65,7 +86,14 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const projectsDataRoot = path.join(__dirname, 'data', 'projects');
+/** Raiz opcional para testes de integração (projetos + studio/base-templates); não usar em produção. */
+const studioTestDataRoot = process.env.STUDIO_TEST_DATA_ROOT?.trim();
+const projectsDataRoot = studioTestDataRoot
+  ? path.join(studioTestDataRoot, 'projects')
+  : path.join(__dirname, 'data', 'projects');
+const studioBaseTemplatesRoot = studioTestDataRoot
+  ? path.join(studioTestDataRoot, 'studio', 'base-templates')
+  : path.join(__dirname, 'data', 'studio', 'base-templates');
 const tmpPath = path.join(os.tmpdir(), 'studio-uploads');
 const supabaseStudio = createSupabaseStudioClient({
   supabaseUrl: process.env.SUPABASE_URL,
@@ -103,6 +131,18 @@ export const projectSeoConfigRepository = supabaseClient
 export const projectVersionRepository = supabaseClient
   ? createSupabaseProjectVersionRepository(supabaseClient)
   : createProjectVersionRepository({
+      projectsRootDir: projectsDataRoot,
+    });
+
+export const studioBaseTemplateRepository = supabaseClient
+  ? createSupabaseStudioBaseTemplateRepository(supabaseClient)
+  : createStudioBaseTemplateRepository({
+      baseTemplatesDir: studioBaseTemplatesRoot,
+    });
+
+export const studioClientTemplateStateRepository = supabaseClient
+  ? createSupabaseStudioClientTemplateStateRepository(supabaseClient)
+  : createStudioClientTemplateStateRepository({
       projectsRootDir: projectsDataRoot,
     });
 
@@ -151,10 +191,7 @@ async function readLegacyContent(): Promise<Content> {
   return parseGlobalSiteContentJson(JSON.parse(raw));
 }
 
-async function loadProjectScopedContent(projectIdRaw: string): Promise<Content> {
-  const projectId = parseProjectIdOrThrow(projectIdRaw);
-  const contentRecord = await projectContentRepository.getByProjectId(projectId);
-  const content = contentRecord ? siteContentFromRecord(contentRecord) : await readLegacyContent();
+async function applyProjectSeoConfigToContent(projectId: ProjectId, content: Content): Promise<Content> {
   const seoConfig = await projectSeoConfigRepository.getByProjectId(projectId);
   if (!seoConfig) {
     return content;
@@ -165,6 +202,221 @@ async function loadProjectScopedContent(projectIdRaw: string): Promise<Content> 
   };
 }
 
+/** Conteúdo persistido em `content.json` + overlay de `seo.json` (sem herança). */
+async function loadProjectScopedContent(projectIdRaw: string): Promise<Content> {
+  const projectId = parseProjectIdOrThrow(projectIdRaw);
+  const contentRecord = await projectContentRepository.getByProjectId(projectId);
+  const content = contentRecord ? siteContentFromRecord(contentRecord) : await readLegacyContent();
+  return applyProjectSeoConfigToContent(projectId, content);
+}
+
+export type ProjectContentInheritanceMeta =
+  | {
+      mode: 'inheritance';
+      styleId: string;
+      inheritedBaseline: Content;
+      overriddenPaths: string[];
+      appliedOverrideCount: number;
+    }
+  | {
+      mode: 'legacy';
+      reason: 'no_template_state' | 'state_project_mismatch' | 'unsupported_style_id';
+    };
+
+/**
+ * Conteúdo servido no GET /api/projects/:projectId/content: herança quando há `template-state`
+ * compatível; caso contrário o mesmo fluxo de `loadProjectScopedContent`.
+ */
+async function loadProjectContentForHttpGet(
+  projectIdRaw: string,
+  options?: { includeInheritanceMeta?: boolean },
+): Promise<{ content: Content; inheritanceMeta?: ProjectContentInheritanceMeta }> {
+  const projectId = parseProjectIdOrThrow(projectIdRaw);
+  const state = await studioClientTemplateStateRepository.getByProjectId(projectId);
+  const wantMeta = options?.includeInheritanceMeta === true;
+
+  if (!state) {
+    const content = await loadProjectScopedContent(projectIdRaw);
+    return {
+      content,
+      inheritanceMeta: wantMeta ? { mode: 'legacy', reason: 'no_template_state' } : undefined,
+    };
+  }
+
+  if (state.projectId !== projectId) {
+    const content = await loadProjectScopedContent(projectIdRaw);
+    return {
+      content,
+      inheritanceMeta: wantMeta ? { mode: 'legacy', reason: 'state_project_mismatch' } : undefined,
+    };
+  }
+
+  if (state.styleId !== STYLE_1_TEMPLATE_KEY) {
+    const content = await loadProjectScopedContent(projectIdRaw);
+    return {
+      content,
+      inheritanceMeta: wantMeta ? { mode: 'legacy', reason: 'unsupported_style_id' } : undefined,
+    };
+  }
+
+  const baseTemplate = await getStudioBaseTemplateRecordOrEnsure();
+  const resolved = resolveClientContent({ baseTemplate, clientState: state });
+  const content = await applyProjectSeoConfigToContent(projectId, resolved.content);
+
+  return {
+    content,
+    inheritanceMeta: wantMeta
+      ? {
+          mode: 'inheritance',
+          styleId: state.styleId,
+          inheritedBaseline: resolved.inheritedBaseline,
+          overriddenPaths: resolved.overriddenPaths,
+          appliedOverrideCount: resolved.appliedOverrideCount,
+        }
+      : undefined,
+  };
+}
+
+const STYLE_1_TEMPLATE_KEY = STUDIO_BASE_TEMPLATE_KEY_STYLE_1;
+
+const PutStudioBaseTemplateBodySchema = z.object({
+  content: ContentSchema,
+  schemaVersion: z.string().trim().min(1).optional(),
+});
+
+const BaseTemplateDivergenceClientsQuerySchema = z.object({
+  path: StudioTemplateContentPathSchema,
+});
+
+const ResetTemplateFieldBodySchema = z.object({
+  path: StudioTemplateContentPathSchema,
+});
+
+const ResetTemplateSectionBodySchema = z.object({
+  sectionId: z.string().trim().min(1).regex(/^[^./\\]+$/),
+});
+
+async function getStudioBaseTemplateRecordOrEnsure() {
+  const existing = await studioBaseTemplateRepository.getByTemplateKey(STYLE_1_TEMPLATE_KEY);
+  if (existing) {
+    return existing;
+  }
+  return studioBaseTemplateRepository.ensureDefaultStyle1Exists();
+}
+
+async function buildGlobalDivergenceResult() {
+  const baseTemplate = await getStudioBaseTemplateRecordOrEnsure();
+  const projects = await projectMetadataRepository.list();
+  const clients = await Promise.all(
+    projects.map(async (p) => {
+      const resolvedContent = await loadProjectScopedContent(p.projectId);
+      const state = await studioClientTemplateStateRepository.getByProjectId(p.projectId);
+      return {
+        projectId: p.projectId,
+        variables: state?.variables ?? {},
+        resolvedContent,
+      };
+    }),
+  );
+  return summarizeGlobalDivergenceAcrossClients({ baseTemplate, clients });
+}
+
+function buildTemplateVariableMapFromContentGlobal(content: Content): TemplateVariableMap {
+  const g = content.global as Record<string, unknown>;
+  const map: TemplateVariableMap = {};
+  for (const key of SUPPORTED_TEMPLATE_VARIABLE_KEYS) {
+    const v = g[key];
+    map[key] = typeof v === 'string' ? v : '';
+  }
+  return map;
+}
+
+function mergeTemplateVariablesForPut(
+  existing: TemplateVariableMap | undefined,
+  content: Content,
+): TemplateVariableMap {
+  return {
+    ...(existing ?? {}),
+    ...buildTemplateVariableMapFromContentGlobal(content),
+  };
+}
+
+/**
+ * Atualiza `template-state` com overrides derivados do `Content` salvo vs template central `style-1`.
+ */
+async function persistClientTemplateStateFromPut(projectId: ProjectId, resolvedContent: Content): Promise<void> {
+  const baseTemplate = await getStudioBaseTemplateRecordOrEnsure();
+  const previousState = await studioClientTemplateStateRepository.getByProjectId(projectId);
+  const variables = mergeTemplateVariablesForPut(previousState?.variables, resolvedContent);
+  const { overrides, overriddenPaths } = buildOverridesFromResolvedContent({
+    baseTemplate,
+    variables,
+    resolvedContent,
+  });
+  await studioClientTemplateStateRepository.save({
+    projectId,
+    styleId: STYLE_1_TEMPLATE_KEY,
+    variables,
+    overrides,
+    overriddenPaths,
+    schemaVersion: previousState?.schemaVersion,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+async function loadClientTemplateStateForReset(projectIdRaw: string): Promise<{
+  projectId: ProjectId;
+  state: StudioClientTemplateStateRecord;
+}> {
+  const projectId = parseProjectIdOrThrow(projectIdRaw);
+  const state = await studioClientTemplateStateRepository.getByProjectId(projectId);
+  if (!state) {
+    throw new ProjectsApiError(404, 'Estado de template não encontrado para este projeto');
+  }
+  if (state.projectId !== projectId) {
+    throw new ProjectsApiError(400, 'Estado de template inconsistente');
+  }
+  if (state.styleId !== STYLE_1_TEMPLATE_KEY) {
+    throw new ProjectsApiError(400, 'Reset de override suportado apenas para style-1');
+  }
+  return { projectId, state };
+}
+
+/** Paths de override cuja raiz lógica é a seção (ex.: `hero`, `hero.stats`, `benefits`). */
+function listOverriddenPathsInSection(
+  overriddenPaths: readonly string[],
+  sectionId: string,
+): string[] {
+  return overriddenPaths.filter((p) => p === sectionId || p.startsWith(`${sectionId}.`));
+}
+
+/**
+ * Persiste estado atualizado, resolve herança, alinha `content.json` + SEO ao resultado (como no GET).
+ */
+async function persistTemplateStateAndSyncProjectContent(
+  projectId: ProjectId,
+  nextState: StudioClientTemplateStateRecord,
+): Promise<Content> {
+  const toSave: StudioClientTemplateStateRecord = {
+    ...nextState,
+    updatedAt: new Date().toISOString(),
+  };
+  await studioClientTemplateStateRepository.save(toSave);
+  const baseTemplate = await getStudioBaseTemplateRecordOrEnsure();
+  const { content: resolved } = resolveClientContent({
+    baseTemplate,
+    clientState: toSave,
+  });
+  const merged = await applyProjectSeoConfigToContent(projectId, resolved);
+  await projectContentRepository.save(
+    buildProjectContentRecord({ projectId, content: merged }),
+  );
+  await projectSeoConfigRepository.save(
+    buildProjectSeoConfig({ projectId, seo: merged.seo }),
+  );
+  return merged;
+}
+
 async function saveProjectScopedContent(
   projectIdRaw: string,
   payload: unknown,
@@ -173,10 +425,10 @@ async function saveProjectScopedContent(
   const projectId = parseProjectIdOrThrow(projectIdRaw);
   const parsed = ContentSchema.parse(payload);
   if (!options?.skipVersionSnapshot) {
-    const currentContent = await loadProjectScopedContent(projectId);
+    const { content: previousResolved } = await loadProjectContentForHttpGet(projectIdRaw);
     await projectVersionRepository.createSnapshot({
       projectId,
-      content: currentContent as unknown as Record<string, JsonValue>,
+      content: previousResolved as unknown as Record<string, JsonValue>,
     });
   }
   const record = buildProjectContentRecord({
@@ -190,6 +442,7 @@ async function saveProjectScopedContent(
       seo: parsed.seo,
     }),
   );
+  await persistClientTemplateStateFromPut(projectId, parsed);
   return parsed;
 }
 
@@ -357,6 +610,7 @@ async function ensureDirectories() {
   await fs.mkdir(mediaVidPath, { recursive: true });
   await fs.mkdir(mediaProjectsPath, { recursive: true });
   await fs.mkdir(projectsDataRoot, { recursive: true });
+  await fs.mkdir(studioBaseTemplatesRoot, { recursive: true });
   await fs.mkdir(tmpPath, { recursive: true });
 }
 
@@ -962,10 +1216,22 @@ app.get('/api/projects/:projectId/exports/:fileName/download', async (req, res) 
   }
 });
 
-// GET /api/projects/:projectId/content — conteúdo no escopo do projeto (fallback legado)
+// GET /api/projects/:projectId/content — Content resolvido (herança + seo) ou legado; ?includeInheritanceMeta=1 envolve em { content, inheritanceMeta }
 app.get('/api/projects/:projectId/content', async (req, res) => {
   try {
-    const content = await loadProjectScopedContent(req.params.projectId);
+    const includeMeta =
+      req.query.includeInheritanceMeta === '1' || req.query.includeInheritanceMeta === 'true';
+    const { content, inheritanceMeta } = await loadProjectContentForHttpGet(req.params.projectId, {
+      includeInheritanceMeta: includeMeta,
+    });
+    if (includeMeta) {
+      return res.json({
+        content,
+        inheritanceMeta:
+          inheritanceMeta ??
+          ({ mode: 'legacy', reason: 'no_template_state' } satisfies ProjectContentInheritanceMeta),
+      });
+    }
     res.json(content);
   } catch (error) {
     if (error instanceof ProjectsApiError) {
@@ -1024,6 +1290,168 @@ app.put('/api/projects/:projectId/content', async (req, res) => {
     }
     console.error('Erro ao salvar conteúdo do projeto:', error);
     res.status(500).json({ error: 'Erro ao salvar conteúdo do projeto' });
+  }
+});
+
+// POST /api/projects/:projectId/template-state/reset-field — remove override em uma path (bloco ou campo simples)
+app.post('/api/projects/:projectId/template-state/reset-field', async (req, res) => {
+  try {
+    const body = ResetTemplateFieldBodySchema.parse(req.body);
+    const { projectId, state } = await loadClientTemplateStateForReset(req.params.projectId);
+    const nextState = removeOverridePath({ clientState: state, path: body.path });
+    const content = await persistTemplateStateAndSyncProjectContent(projectId, nextState);
+    res.json(content);
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao resetar campo do template-state:', error);
+    res.status(500).json({ error: 'Erro ao resetar override' });
+  }
+});
+
+// POST /api/projects/:projectId/template-state/reset-section — remove todos os overrides da seção (respeita paths de blocos compostos)
+app.post('/api/projects/:projectId/template-state/reset-section', async (req, res) => {
+  try {
+    const body = ResetTemplateSectionBodySchema.parse(req.body);
+    const { projectId, state } = await loadClientTemplateStateForReset(req.params.projectId);
+    const toClear = listOverriddenPathsInSection(state.overriddenPaths, body.sectionId);
+    let nextState = state;
+    for (const p of [...toClear].sort()) {
+      nextState = removeOverridePath({ clientState: nextState, path: p });
+    }
+    const content = await persistTemplateStateAndSyncProjectContent(projectId, nextState);
+    res.json(content);
+  } catch (error) {
+    if (error instanceof ProjectsApiError) {
+      return res.status(error.statusCode).json({
+        error: error.message,
+        ...error.payload,
+      });
+    }
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao resetar seção do template-state:', error);
+    res.status(500).json({ error: 'Erro ao resetar overrides da seção' });
+  }
+});
+
+// --- Template central Estilo 1 (style-1) ---
+
+// GET /api/studio/base-templates/style-1 — registro do template base
+app.get('/api/studio/base-templates/style-1', async (_req, res) => {
+  try {
+    const record = await getStudioBaseTemplateRecordOrEnsure();
+    res.json({
+      templateKey: STYLE_1_TEMPLATE_KEY,
+      styleId: record.styleId,
+      schemaVersion: record.schemaVersion ?? null,
+      content: record.content,
+      updatedAt: record.updatedAt,
+      createdAt: record.createdAt ?? null,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Template inválido ao carregar',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao ler template base style-1:', error);
+    res.status(500).json({ error: 'Erro ao ler template base' });
+  }
+});
+
+// PUT /api/studio/base-templates/style-1 — atualiza conteúdo do template base
+app.put('/api/studio/base-templates/style-1', async (req, res) => {
+  try {
+    const body = PutStudioBaseTemplateBodySchema.parse(req.body);
+    const existing = await studioBaseTemplateRepository.getByTemplateKey(STYLE_1_TEMPLATE_KEY);
+    const ts = new Date().toISOString();
+    const saved = await studioBaseTemplateRepository.save({
+      styleId: STYLE_1_TEMPLATE_KEY,
+      content: body.content,
+      schemaVersion: body.schemaVersion,
+      updatedAt: ts,
+      createdAt: existing?.createdAt ?? ts,
+    });
+    res.json({
+      templateKey: STYLE_1_TEMPLATE_KEY,
+      styleId: saved.styleId,
+      schemaVersion: saved.schemaVersion ?? null,
+      content: saved.content,
+      updatedAt: saved.updatedAt,
+      createdAt: saved.createdAt ?? null,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Payload inválido',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao salvar template base style-1:', error);
+    res.status(500).json({ error: 'Erro ao salvar template base' });
+  }
+});
+
+// GET /api/studio/base-templates/style-1/divergence/clients — clientes divergentes em uma path
+app.get('/api/studio/base-templates/style-1/divergence/clients', async (req, res) => {
+  try {
+    const query = BaseTemplateDivergenceClientsQuerySchema.parse({
+      path: typeof req.query.path === 'string' ? req.query.path : '',
+    });
+    const { fieldSummaries } = await buildGlobalDivergenceResult();
+    const hit = fieldSummaries.find((f) => f.path === query.path);
+    res.json({
+      templateKey: STYLE_1_TEMPLATE_KEY,
+      path: query.path,
+      divergentClientCount: hit?.divergentClientCount ?? 0,
+      divergentProjectIds: hit?.divergentProjectIds ?? [],
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Query inválida',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao listar divergência por path (style-1):', error);
+    res.status(500).json({ error: 'Erro ao calcular divergência' });
+  }
+});
+
+// GET /api/studio/base-templates/style-1/divergence — divergência agregada (todos os projetos)
+app.get('/api/studio/base-templates/style-1/divergence', async (_req, res) => {
+  try {
+    const { fieldSummaries, sectionSummaries } = await buildGlobalDivergenceResult();
+    res.json({
+      templateKey: STYLE_1_TEMPLATE_KEY,
+      fieldSummaries,
+      sectionSummaries,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: 'Dados inválidos para divergência',
+        details: error.flatten(),
+      });
+    }
+    console.error('Erro ao calcular divergência global (style-1):', error);
+    res.status(500).json({ error: 'Erro ao calcular divergência' });
   }
 });
 

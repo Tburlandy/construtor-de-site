@@ -39,6 +39,8 @@ interface BuilderSidebarProps {
   onToggleCollapsed: () => void;
   onSectionChange: (sectionId: BuilderSectionId) => void;
   onModuleChange: (moduleId: BuilderSidebarModuleId) => void;
+  /** `baseTemplate`: só Construtor + atalho para lista de clientes (sem histórico/publicação/config cliente). */
+  variant?: 'project' | 'baseTemplate';
 }
 
 interface BuilderModule {
@@ -48,7 +50,7 @@ interface BuilderModule {
   href?: string;
 }
 
-const modules: BuilderModule[] = [
+const allModules: BuilderModule[] = [
   { id: 'builder', label: 'Construtor', icon: Boxes },
   { id: 'history', label: 'Histórico', icon: FileClock },
   { id: 'clientSettings', label: 'Config. cliente', icon: Settings2 },
@@ -80,9 +82,15 @@ export function BuilderSidebar({
   onToggleCollapsed,
   onSectionChange,
   onModuleChange,
+  variant = 'project',
 }: BuilderSidebarProps) {
   const [hoverExpanded, setHoverExpanded] = useState(false);
   const expanded = !collapsed || hoverExpanded;
+
+  const modules =
+    variant === 'baseTemplate'
+      ? allModules.filter((m) => m.id === 'builder' || m.id === 'clients')
+      : allModules;
 
   return (
     <aside
@@ -104,10 +112,10 @@ export function BuilderSidebar({
       <div className="flex items-center justify-between border-b border-[var(--builder-border)] bg-gradient-to-r from-[#020617] to-[#0a1630] px-2.5 py-2.5">
         <div className={cn('space-y-0.5', !expanded && 'lg:hidden')}>
           <p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-[var(--builder-accent-warm)]">
-            Construtor
+            {variant === 'baseTemplate' ? 'Template base' : 'Construtor'}
           </p>
           <p className="builder-heading text-[15px] font-semibold text-[var(--builder-text-primary)]">
-            Navegação
+            {variant === 'baseTemplate' ? 'Estilo 1' : 'Navegação'}
           </p>
         </div>
         <button

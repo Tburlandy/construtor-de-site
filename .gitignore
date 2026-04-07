@@ -30,6 +30,10 @@ dist-ssr
 # Builds locais / temporários
 artifacts/
 tmp/
+dist.zip
+
+# Artefactos locais de automação / MCP
+.playwright-mcp/
 
 # Cache local do Supabase CLI (refs/URLs — não versionar)
 supabase/.temp/

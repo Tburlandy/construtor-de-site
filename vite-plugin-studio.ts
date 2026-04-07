@@ -20,8 +20,15 @@ import {
   createSupabaseProjectPublicationRepository,
   createSupabaseProjectSeoConfigRepository,
   createSupabaseProjectVersionRepository,
+  createSupabaseStudioBaseTemplateRepository,
   createSupabaseStudioClient,
+  createSupabaseStudioClientTemplateStateRepository,
 } from './src/platform/repositories/supabaseStudioRepositories.js';
+import {
+  STUDIO_BASE_TEMPLATE_KEY_STYLE_1,
+  createStudioBaseTemplateRepository,
+} from './src/platform/repositories/studioBaseTemplateRepository.js';
+import { createStudioClientTemplateStateRepository } from './src/platform/repositories/studioClientTemplateStateRepository.js';
 import {
   buildProjectContentRecord,
   parseGlobalSiteContentJson,
@@ -60,6 +67,7 @@ import {
   getLatestClientExport,
   listClientExports,
 } from './src/platform/studio/clientExportService.js';
+import { resolveClientContent } from './src/platform/studio/templateInheritanceService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -223,6 +231,32 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
             projectsRootDir: projectsDataRoot,
           });
 
+      const studioBaseTemplatesRoot = path.join(__dirname, 'data', 'studio', 'base-templates');
+      const studioBaseTemplateRepository = supabaseClient
+        ? createSupabaseStudioBaseTemplateRepository(supabaseClient)
+        : createStudioBaseTemplateRepository({
+            baseTemplatesDir: studioBaseTemplatesRoot,
+          });
+
+      const studioClientTemplateStateRepository = supabaseClient
+        ? createSupabaseStudioClientTemplateStateRepository(supabaseClient)
+        : createStudioClientTemplateStateRepository({ projectsRootDir: projectsDataRoot });
+
+      const PutStudioBaseTemplateBodySchema = z.object({
+        content: ContentSchema,
+        schemaVersion: z.string().trim().min(1).optional(),
+      });
+
+      const STYLE_1_TEMPLATE_KEY = STUDIO_BASE_TEMPLATE_KEY_STYLE_1;
+
+      async function getStudioBaseTemplateRecordOrEnsure() {
+        const existing = await studioBaseTemplateRepository.getByTemplateKey(STYLE_1_TEMPLATE_KEY);
+        if (existing) {
+          return existing;
+        }
+        return studioBaseTemplateRepository.ensureDefaultStyle1Exists();
+      }
+
       const uploadProjectMediaToSupabase = async (params: {
         projectId: ProjectId;
         mediaKind: 'img' | 'vid';
@@ -265,6 +299,24 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
         };
       };
 
+      /** Paridade com `studio-server` GET `/api/projects/:id/content` (template + variáveis + overrides + SEO). */
+      const loadProjectContentResolvedForGet = async (projectId: ProjectId): Promise<Content> => {
+        const state = await studioClientTemplateStateRepository.getByProjectId(projectId);
+        if (!state || state.projectId !== projectId || state.styleId !== STYLE_1_TEMPLATE_KEY) {
+          return loadProjectScopedContent(projectId);
+        }
+        const baseTemplate = await getStudioBaseTemplateRecordOrEnsure();
+        const { content: merged } = resolveClientContent({ baseTemplate, clientState: state });
+        const seoConfig = await projectSeoConfigRepository.getByProjectId(projectId);
+        if (!seoConfig) {
+          return merged;
+        }
+        return {
+          ...merged,
+          seo: siteSeoFromProjectSeoConfig(seoConfig),
+        };
+      };
+
       const saveProjectScopedContent = async (
         projectId: ProjectId,
         payload: unknown,
@@ -297,6 +349,7 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
         await fs.mkdir(mediaVidPath, { recursive: true });
         await fs.mkdir(mediaProjectsPath, { recursive: true });
         await fs.mkdir(projectsDataRoot, { recursive: true });
+        await fs.mkdir(studioBaseTemplatesRoot, { recursive: true });
         await fs.mkdir(path.join(__dirname, 'tmp'), { recursive: true });
       }
       void ensureDirectories();
@@ -310,6 +363,84 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
         },
       });
       const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+
+      // /api/studio/base-templates/style-1 — paridade com studio-server (template central no dev)
+      server.middlewares.use(async (req, res, next) => {
+        const rawUrl = req.url ?? '/';
+        const pathname = new URL(rawUrl, 'http://studio.dev').pathname;
+        if (pathname !== '/api/studio/base-templates/style-1') {
+          return next();
+        }
+
+        const sendJson = (status: number, data: unknown) => {
+          res.statusCode = status;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(data));
+        };
+
+        try {
+          if (req.method === 'GET') {
+            const record = await getStudioBaseTemplateRecordOrEnsure();
+            return sendJson(200, {
+              templateKey: STYLE_1_TEMPLATE_KEY,
+              styleId: record.styleId,
+              schemaVersion: record.schemaVersion ?? null,
+              content: record.content,
+              updatedAt: record.updatedAt,
+              createdAt: record.createdAt ?? null,
+            });
+          }
+
+          if (req.method === 'PUT') {
+            let body = '';
+            await new Promise<void>((resolve, reject) => {
+              req.on('data', (chunk) => {
+                body += chunk.toString();
+              });
+              req.on('end', () => resolve());
+              req.on('error', reject);
+            });
+
+            let parsedBody: unknown;
+            try {
+              parsedBody = body.length > 0 ? JSON.parse(body) : {};
+            } catch {
+              return sendJson(400, { error: 'JSON inválido' });
+            }
+
+            const putBody = PutStudioBaseTemplateBodySchema.parse(parsedBody);
+            const existing = await studioBaseTemplateRepository.getByTemplateKey(STYLE_1_TEMPLATE_KEY);
+            const ts = new Date().toISOString();
+            const saved = await studioBaseTemplateRepository.save({
+              styleId: STYLE_1_TEMPLATE_KEY,
+              content: putBody.content,
+              schemaVersion: putBody.schemaVersion,
+              updatedAt: ts,
+              createdAt: existing?.createdAt ?? ts,
+            });
+            return sendJson(200, {
+              templateKey: STYLE_1_TEMPLATE_KEY,
+              styleId: saved.styleId,
+              schemaVersion: saved.schemaVersion ?? null,
+              content: saved.content,
+              updatedAt: saved.updatedAt,
+              createdAt: saved.createdAt ?? null,
+            });
+          }
+
+          res.statusCode = 405;
+          res.end();
+        } catch (error) {
+          if (error instanceof z.ZodError) {
+            return sendJson(400, {
+              error: 'Payload inválido',
+              details: error.flatten(),
+            });
+          }
+          console.error('Erro em /api/studio/base-templates/style-1:', error);
+          return sendJson(500, { error: 'Erro no template base' });
+        }
+      });
 
       // /api/clients — fluxo de exportação estática/ZIP por cliente
       server.middlewares.use(async (req, res, next) => {
@@ -860,7 +991,7 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
 
           if (req.method === 'GET' && segments.length === 2 && segments[1] === 'content') {
             const projectId = parseProjectIdOrThrow(segments[0]);
-            const content = await loadProjectScopedContent(projectId);
+            const content = await loadProjectContentResolvedForGet(projectId);
             return sendJson(200, content);
           }
 
