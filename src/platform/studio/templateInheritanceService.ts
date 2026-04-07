@@ -97,6 +97,11 @@ export type SummarizeGlobalDivergenceAcrossClientsResult = {
 };
 
 function clonePlain<T>(value: T): T {
+  // `JSON.stringify(undefined)` não produz JSON válido; ocorre quando o conteúdo
+  // resolvido omite uma seção opcional que ainda existe no baseline herdado (diff → override).
+  if (value === undefined) {
+    return null as unknown as T;
+  }
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
