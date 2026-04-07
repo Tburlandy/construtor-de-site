@@ -180,6 +180,11 @@ export function resolveClientContent(params: ResolveClientContentParams): Resolv
       continue;
     }
     const value = clientState.overrides[path];
+    // Overrides legados/corrompidos com `null` quebram o ContentSchema (ex.: `faq.items` exige array ou omitido).
+    // Também ignora `undefined` serializado em JSONB.
+    if (value === null || value === undefined) {
+      continue;
+    }
     merged = setValueAtPath(merged, path, value);
     applied += 1;
   }
@@ -217,6 +222,10 @@ function collectOverridesFromDiff(
     const bi = getValueAtPath(inherited, c);
     const br = getValueAtPath(resolved, c);
     if (!deepEqual(bi, br)) {
+      // Conteúdo resolvido sem esta seção: não gravar override (mantém baseline herdado; evita `null` inválido no schema).
+      if (br === undefined) {
+        continue;
+      }
       overrides[c] = clonePlain(br) as StudioTemplateOverrideValue;
       paths.push(c);
       handled.add(c);
@@ -241,6 +250,9 @@ function collectOverridesFromDiff(
     const bi = getValueAtPath(inherited, leaf);
     const br = getValueAtPath(resolved, leaf);
     if (!deepEqual(bi, br)) {
+      if (br === undefined) {
+        continue;
+      }
       overrides[leaf] = clonePlain(br) as StudioTemplateOverrideValue;
       paths.push(leaf as StudioTemplateContentPath);
       handled.add(leaf);
