@@ -82,14 +82,16 @@ function resolveSectionElement(sectionId: BuilderSectionId): HTMLElement | null 
 }
 
 export default function StudioProjectPreview() {
-  const { projectId: projectIdParam, clientId: clientIdParam } = useParams<{
+  const { projectId: projectIdParam, clientId: clientIdParam, pageId: pageIdParam } = useParams<{
     projectId?: string;
     clientId?: string;
+    pageId?: string;
   }>();
   const projectId = useMemo(
     () => decodeProjectId(clientIdParam ?? projectIdParam),
     [clientIdParam, projectIdParam],
   );
+  const pageId = useMemo(() => decodeProjectId(pageIdParam), [pageIdParam]);
   const [state, setState] = useState<PreviewState>({ status: 'loading' });
   const [renderKey, setRenderKey] = useState(0);
   const [focusedSectionId, setFocusedSectionId] = useState<BuilderSectionId>('hero');
@@ -107,23 +109,32 @@ export default function StudioProjectPreview() {
       }
 
       try {
-        // Sem `includeInheritanceMeta`: corpo é só o Content já resolvido (herança + SEO no servidor).
-        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/content`);
+        let targetPageId = pageId;
+        if (!targetPageId) {
+          const pagesResponse = await fetch(`/api/clients/${encodeURIComponent(projectId)}/pages`);
+          if (pagesResponse.ok) {
+            const pages = (await pagesResponse.json()) as Array<{ pageId: string; isDefault: boolean }>;
+            targetPageId = pages.find((page) => page.isDefault)?.pageId ?? '';
+          }
+        }
+
+        const response = targetPageId
+          ? await fetch(`/api/clients/${encodeURIComponent(projectId)}/pages/${encodeURIComponent(targetPageId)}/content`)
+          : await fetch(`/api/projects/${encodeURIComponent(projectId)}/content`);
 
         if (response.status === 404) {
-          setState({
-            status: 'error',
-            message: `Cliente ${projectId} não encontrado para preview.`,
-          });
+          setState({ status: 'error', message: `Cliente ${projectId} não encontrado para preview.` });
           return;
         }
-
-        if (!response.ok) {
-          throw new Error('fetch failed');
-        }
+        if (!response.ok) throw new Error('fetch failed');
 
         const raw: unknown = await response.json();
-        const projectContent = parseResolvedProjectContentPayload(raw);
+        const candidate = targetPageId && raw && typeof raw === 'object' && 'content' in raw
+          ? (raw as { content: unknown }).content
+          : raw;
+        const projectContent = targetPageId
+          ? ContentSchema.parse(candidate)
+          : parseResolvedProjectContentPayload(candidate);
         clearContentCache();
         setContentRuntimeOverride(projectContent);
         setRenderKey((current) => current + 1);
@@ -135,7 +146,7 @@ export default function StudioProjectPreview() {
         });
       }
     },
-    [projectId],
+    [pageId, projectId],
   );
 
   useEffect(() => {

@@ -49,6 +49,7 @@ const StudioAdminEntry = studioEnabled ? lazy(() => import("./pages/StudioAdminE
 const StudioProjectShell = studioEnabled ? lazy(() => import("./pages/StudioProjectShell")) : null;
 const StudioProjectPreview = studioEnabled ? lazy(() => import("./pages/StudioProjectPreview")) : null;
 const StudioBaseTemplatePageLazy = studioEnabled ? lazy(() => import("./pages/StudioBaseTemplatePage")) : null;
+const StudioLayoutsPageLazy = studioEnabled ? lazy(() => import("./pages/StudioLayoutsPage")) : null;
 const StudioBaseTemplatePreviewLazy = studioEnabled
   ? lazy(() =>
       import("./pages/StudioBaseTemplatePage").then((mod) => ({ default: mod.StudioBaseTemplatePreview })),
@@ -79,6 +80,7 @@ const App = () => (
             StudioProjectShell &&
             StudioProjectPreview &&
             StudioBaseTemplatePageLazy &&
+            StudioLayoutsPageLazy &&
             StudioBaseTemplatePreviewLazy ? (
               <>
                 <Route
@@ -90,10 +92,26 @@ const App = () => (
                   }
                 />
                 <Route
+                  path="/preview/:clientId/:pageId"
+                  element={
+                    <Suspense fallback={StudioRouteFallback}>
+                      <StudioProjectPreview />
+                    </Suspense>
+                  }
+                />
+                <Route
                   path="/preview/:clientId"
                   element={
                     <Suspense fallback={StudioRouteFallback}>
                       <StudioProjectPreview />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/cliente/:clientId/pagina/:pageId"
+                  element={
+                    <Suspense fallback={StudioRouteFallback}>
+                      <StudioProjectShell />
                     </Suspense>
                   }
                 />
@@ -110,6 +128,22 @@ const App = () => (
                   element={
                     <Suspense fallback={StudioRouteFallback}>
                       <StudioAdminEntry />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/construtor/layouts"
+                  element={
+                    <Suspense fallback={StudioRouteFallback}>
+                      <StudioLayoutsPageLazy />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/construtor/layouts/:styleId"
+                  element={
+                    <Suspense fallback={StudioRouteFallback}>
+                      <StudioBaseTemplatePageLazy />
                     </Suspense>
                   }
                 />

@@ -48,8 +48,14 @@ export const STUDIO_TEMPLATE_VARIABLE_KEYS_V1 = [
   'city',
   'siteUrl',
   'whatsappE164',
+  'whatsappDigits',
+  'businessPhone',
+  'address',
+  'cnpj',
+  'logo',
   'yearsInMarket',
   'projectCount',
+  'prefix',
 ] as const;
 
 export type StudioTemplateVariableKeyV1 = (typeof STUDIO_TEMPLATE_VARIABLE_KEYS_V1)[number];
