@@ -6,7 +6,77 @@
       "includeFiles": "{content/**,data/projects/**,.export-template/current/**}"
     }
   },
+  "redirects": [
+    { "source": "/", "destination": "/pagina/construtor", "permanent": false },
+    { "source": "/pagina", "destination": "/pagina/construtor", "permanent": false },
+    { "source": "/pagina/", "destination": "/pagina/construtor", "permanent": false }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/pagina/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/fonts/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/pagina/fonts/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/media/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/pagina/media/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    }
+  ],
   "rewrites": [
+    { "source": "/pagina/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/pagina/fonts/(.*)", "destination": "/fonts/$1" },
+    { "source": "/pagina/media/(.*)", "destination": "/media/$1" },
+    { "source": "/pagina/content/(.*)", "destination": "/content/$1" },
+    { "source": "/pagina/robots.txt", "destination": "/robots.txt" },
+    { "source": "/pagina/sitemap.xml", "destination": "/sitemap.xml" },
+    { "source": "/pagina/(.*\\.(?:png|jpe?g|webp|avif|svg|ico))", "destination": "/$1" },
+    { "source": "/comercial/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/comercial/fonts/(.*)", "destination": "/fonts/$1" },
+    { "source": "/comercial/media/(.*)", "destination": "/media/$1" },
+    { "source": "/comercial/content/(.*)", "destination": "/content/$1" },
+    { "source": "/comercial/robots.txt", "destination": "/robots.txt" },
+    { "source": "/comercial/sitemap.xml", "destination": "/sitemap.xml" },
+    { "source": "/comercial/(.*\\.(?:png|jpe?g|webp|avif|svg|ico))", "destination": "/$1" },
+    { "source": "/comercial/(.*)", "destination": "/index.html" },
     { "source": "/((?!api).*)", "destination": "/index.html" }
   ]
 }
