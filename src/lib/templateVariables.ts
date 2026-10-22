@@ -16,8 +16,14 @@ export const SUPPORTED_TEMPLATE_VARIABLE_KEYS = [
   'city',
   'siteUrl',
   'whatsappE164',
+  'whatsappDigits',
+  'businessPhone',
+  'address',
+  'cnpj',
+  'logo',
   'yearsInMarket',
   'projectCount',
+  'prefix',
 ] as const;
 
 export type SupportedTemplateVariableKey = (typeof SUPPORTED_TEMPLATE_VARIABLE_KEYS)[number];
@@ -72,4 +78,22 @@ export function resolveTemplateVariablesInObject<T>(input: T, variables: Templat
     out[key] = resolveTemplateVariablesInObject(value, variables);
   }
   return out as T;
+}
+
+
+/** Collects every {{variable}} placeholder recursively without resolving it. */
+export function collectTemplatePlaceholders(input: unknown): string[] {
+  const found = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (typeof value === 'string') {
+      const regex = /\{\{([a-zA-Z][a-zA-Z0-9]*)\}\}/g;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(value)) !== null) found.add(match[1]);
+      return;
+    }
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    if (value && typeof value === 'object') Object.values(value as Record<string, unknown>).forEach(visit);
+  };
+  visit(input);
+  return [...found].sort();
 }

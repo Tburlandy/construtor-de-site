@@ -16,6 +16,7 @@ const TEMPLATE_METADATA_PATH = path.join(TEMPLATE_ROOT, 'metadata.json');
 const IS_SERVERLESS_RUNTIME = Boolean(process.env.VERCEL);
 const WORK_ROOT = IS_SERVERLESS_RUNTIME ? path.join(os.tmpdir(), 'studio-export-runtime') : REPO_ROOT;
 const ARTIFACTS_ROOT = path.join(WORK_ROOT, 'artifacts', 'clients');
+const PAGE_ARTIFACTS_ROOT = path.join(WORK_ROOT, 'artifacts');
 const TEMP_WORKSPACES_ROOT = path.join(WORK_ROOT, '.tmp', 'export-workspaces');
 
 const TEXT_FILE_EXTENSIONS = new Set([
@@ -44,6 +45,7 @@ type SupabaseUploadResult = {
 
 type NormalizedExportClientZipParams = {
   clientId: ProjectId;
+  pageId?: string;
   content: unknown;
   buildConfig: ClientExportBuildConfig;
   supabaseClient: SupabaseClient | null;
@@ -89,6 +91,7 @@ type ClientExportZipArtifactLike = {
 
 export type ExportClientZipParams = {
   clientIdRaw: string;
+  pageIdRaw?: string;
   content: unknown;
   buildConfig: ClientExportBuildConfig;
   supabaseClient?: SupabaseClient | null;
@@ -97,6 +100,7 @@ export type ExportClientZipParams = {
 
 export type ExportClientZipResult = {
   clientId: ProjectId;
+  pageId?: string;
   buildPath: string;
   zip: {
     clientId: ProjectId;
@@ -178,9 +182,14 @@ function normalizeExportsBucket(rawBucket?: string): string {
 
 function normalizeExportClientZipParams(params: ExportClientZipParams): NormalizedExportClientZipParams {
   const clientId = parseClientIdOrThrow(params.clientIdRaw);
+  const pageId = params.pageIdRaw?.trim();
+  if (pageId && (pageId.includes('/') || pageId.includes('\\'))) {
+    throw new ClientExportError(400, 'pageId inválido');
+  }
   assertContentPayload(params.content);
   return {
     clientId,
+    ...(pageId ? { pageId } : {}),
     content: params.content,
     buildConfig: normalizeClientBuildConfig(params.buildConfig),
     supabaseClient: params.supabaseClient ?? null,
@@ -322,10 +331,13 @@ export async function uploadZipToSupabase(params: {
   supabaseClient: SupabaseClient;
   exportsBucket: string;
   clientId: ProjectId;
+  pageId?: string;
   fileName: string;
   absoluteZipPath: string;
 }): Promise<SupabaseUploadResult> {
-  const storagePath = `clients/${params.clientId}/${params.fileName}`;
+  const storagePath = params.pageId
+    ? `clients/${params.clientId}/pages/${params.pageId}/${params.fileName}`
+    : `clients/${params.clientId}/${params.fileName}`;
   const zipBuffer = await fs.readFile(params.absoluteZipPath);
   const { error } = await params.supabaseClient.storage
     .from(params.exportsBucket)
@@ -368,8 +380,12 @@ export async function exportClientZip(
   const metadata = await readTemplateMetadata();
 
   const timestamp = formatTimestamp(new Date());
-  const fileName = `${normalizedParams.clientId}-${timestamp}.zip`;
-  const clientArtifactsRoot = path.join(ARTIFACTS_ROOT, normalizedParams.clientId);
+  const fileName = normalizedParams.pageId
+    ? `${normalizedParams.clientId}-${normalizedParams.pageId}-${timestamp}.zip`
+    : `${normalizedParams.clientId}-${timestamp}.zip`;
+  const clientArtifactsRoot = normalizedParams.pageId
+    ? path.join(PAGE_ARTIFACTS_ROOT, normalizedParams.clientId, normalizedParams.pageId)
+    : path.join(ARTIFACTS_ROOT, normalizedParams.clientId);
   const buildPath = path.join(clientArtifactsRoot, 'build', timestamp);
   const zipDirectoryPath = path.join(clientArtifactsRoot, 'zip');
 
@@ -409,6 +425,7 @@ export async function exportClientZip(
         supabaseClient: normalizedParams.supabaseClient,
         exportsBucket: normalizedParams.exportsBucket,
         clientId: normalizedParams.clientId,
+        pageId: normalizedParams.pageId,
         fileName,
         absoluteZipPath,
       });
@@ -418,6 +435,7 @@ export async function exportClientZip(
 
     return {
       clientId: normalizedParams.clientId,
+      pageId: normalizedParams.pageId,
       buildPath,
       buildConfig: normalizedParams.buildConfig,
       zip: {

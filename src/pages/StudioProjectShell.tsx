@@ -5,6 +5,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import type { Content } from '@/content/schema';
 import type { ProjectListItemWithContentLogo, ProjectMetadata } from '@/platform/contracts';
+import type { StudioPageMetadata } from '@/platform/contracts/studioPages';
+import type { StudioLayoutRecord } from '@/platform/contracts/studioLayouts';
 import { useToast } from '@/hooks/use-toast';
 import {
   Dialog,
@@ -35,6 +37,8 @@ import { BuilderTopbar } from '@/components/studio-builder/BuilderTopbar';
 import { BUILDER_SECTIONS, type BuilderSectionId, type BuilderTabId } from '@/components/studio-builder/builderSections';
 import { ClientTemplateVariablesPanel } from '@/components/studio-builder/ClientTemplateVariablesPanel';
 import { BuilderPreviewPane } from '@/components/studio-builder/preview/BuilderPreviewPane';
+import { CreatePageDialog } from '@/components/studio-builder/CreatePageDialog';
+import { ChangeLayoutDialog } from '@/components/studio-builder/ChangeLayoutDialog';
 import { normalizeLogoImageLayout } from '@/lib/imageLayout';
 import '@/components/studio-builder/builderTheme.css';
 
@@ -161,9 +165,10 @@ function publishFormFromPayload(payload: PublishPayload): PublishFormState {
 }
 
 export default function StudioProjectShell() {
-  const { projectId: projectIdParam, clientId: clientIdParam } = useParams<{
+  const { projectId: projectIdParam, clientId: clientIdParam, pageId: pageIdParam } = useParams<{
     projectId?: string;
     clientId?: string;
+    pageId?: string;
   }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -171,38 +176,49 @@ export default function StudioProjectShell() {
     () => decodeProjectId(clientIdParam ?? projectIdParam),
     [clientIdParam, projectIdParam],
   );
+  const pageId = useMemo(() => decodeProjectId(pageIdParam), [pageIdParam]);
 
-  const {
-    isInheritanceActive,
-    isInherited,
-    inheritanceMeta,
-    resetFieldAsync,
-    resetSectionAsync,
-    isResettingField,
-    isResettingSection,
-  } = useClientTemplateInheritance(projectId || undefined);
+  const [pages, setPages] = useState<StudioPageMetadata[]>([]);
+  const [layouts, setLayouts] = useState<StudioLayoutRecord[]>([]);
+  const [loadingPages, setLoadingPages] = useState(false);
+  const currentPage = useMemo(
+    () => pages.find((entry) => entry.pageId === pageId) ?? null,
+    [pageId, pages],
+  );
+
+  const inheritance = useClientTemplateInheritance(
+    currentPage?.isDefault ? projectId || undefined : undefined,
+  );
 
   const builderInheritanceApi: BuilderInheritanceApi = useMemo(() => {
+    if (!currentPage?.isDefault) {
+      const unsupported = async (): Promise<Content> => {
+        throw new Error('Herança do cliente só se aplica à página padrão.');
+      };
+      return {
+        isInheritanceActive: false,
+        isInherited: () => null,
+        overriddenPaths: [],
+        resetFieldAsync: unsupported,
+        resetSectionAsync: unsupported,
+        isResettingField: false,
+        isResettingSection: false,
+      };
+    }
     const overriddenPaths =
-      inheritanceMeta?.mode === 'inheritance' ? inheritanceMeta.overriddenPaths : [];
+      inheritance.inheritanceMeta?.mode === 'inheritance'
+        ? inheritance.inheritanceMeta.overriddenPaths
+        : [];
     return {
-      isInheritanceActive,
-      isInherited,
+      isInheritanceActive: inheritance.isInheritanceActive,
+      isInherited: inheritance.isInherited,
       overriddenPaths,
-      resetFieldAsync,
-      resetSectionAsync,
-      isResettingField,
-      isResettingSection,
+      resetFieldAsync: inheritance.resetFieldAsync,
+      resetSectionAsync: inheritance.resetSectionAsync,
+      isResettingField: inheritance.isResettingField,
+      isResettingSection: inheritance.isResettingSection,
     };
-  }, [
-    isInheritanceActive,
-    isInherited,
-    inheritanceMeta,
-    resetFieldAsync,
-    resetSectionAsync,
-    isResettingField,
-    isResettingSection,
-  ]);
+  }, [currentPage?.isDefault, inheritance]);
 
   const [project, setProject] = useState<ProjectMetadata | null>(null);
   const [projects, setProjects] = useState<ProjectListItemWithContentLogo[]>([]);
@@ -223,6 +239,15 @@ export default function StudioProjectShell() {
   const [versions, setVersions] = useState<BuilderContentVersionSummary[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
+  const [createPageOpen, setCreatePageOpen] = useState(false);
+  const [creatingPage, setCreatingPage] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<
+    | { type: 'page'; pageId: string }
+    | { type: 'project'; projectId: string }
+    | null
+  >(null);
+  const [pendingLayoutId, setPendingLayoutId] = useState<string | null>(null);
+  const [changingLayout, setChangingLayout] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -263,26 +288,72 @@ export default function StudioProjectShell() {
     }
   }, []);
 
-  const loadVersions = useCallback(async () => {
+  const loadPages = useCallback(async () => {
     if (!projectId) {
-      setVersions([]);
+      setPages([]);
+      setLayouts([]);
+      setLoadingPages(false);
       return;
     }
 
+    setLoadingPages(true);
+    try {
+      const [pagesResponse, layoutsResponse] = await Promise.all([
+        fetch('/api/clients/' + encodeURIComponent(projectId) + '/pages'),
+        fetch('/api/layouts'),
+      ]);
+      if (!pagesResponse.ok) {
+        throw new Error('pages fetch failed');
+      }
+      const loadedPages = (await pagesResponse.json()) as StudioPageMetadata[];
+      setPages(loadedPages);
+      setLayouts(layoutsResponse.ok ? ((await layoutsResponse.json()) as StudioLayoutRecord[]) : []);
+
+      const defaultPage = loadedPages.find((entry) => entry.isDefault);
+      if (!pageId && defaultPage) {
+        navigate(
+          '/cliente/' + encodeURIComponent(projectId) + '/pagina/' + encodeURIComponent(defaultPage.pageId),
+          { replace: true },
+        );
+      }
+    } catch {
+      setPages([]);
+      setLayouts([]);
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível carregar as páginas deste cliente.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingPages(false);
+    }
+  }, [navigate, pageId, projectId, toast]);
+
+  const loadVersions = useCallback(async () => {
+    if (!projectId || !pageId) {
+      setVersions([]);
+      return;
+    }
     setLoadingVersions(true);
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/versions`);
+      const response = await fetch(
+        '/api/clients/' +
+          encodeURIComponent(projectId) +
+          '/pages/' +
+          encodeURIComponent(pageId) +
+          '/versions',
+      );
       if (!response.ok) {
         throw new Error('fetch failed');
       }
-      const data = (await response.json()) as BuilderContentVersionSummary[];
-      setVersions(data);
+      const data = (await response.json()) as Array<BuilderContentVersionSummary & { content?: unknown }>;
+      setVersions(data.map(({ versionId, createdAt }) => ({ versionId, createdAt })));
     } catch {
       setVersions([]);
     } finally {
       setLoadingVersions(false);
     }
-  }, [projectId]);
+  }, [pageId, projectId]);
 
   const loadProjectWorkspace = useCallback(async () => {
     if (!projectId) {
@@ -293,38 +364,53 @@ export default function StudioProjectShell() {
       return;
     }
 
+    if (!pageId) {
+      setLoading(true);
+      setNotFound(false);
+      setProject(null);
+      setContent(null);
+      return;
+    }
+
     setLoading(true);
     setNotFound(false);
-
     try {
       const [projectResponse, contentResponse] = await Promise.all([
-        fetch(`/api/projects/${encodeURIComponent(projectId)}`),
-        fetch(`/api/projects/${encodeURIComponent(projectId)}/content`),
+        fetch('/api/projects/' + encodeURIComponent(projectId)),
+        fetch(
+          '/api/clients/' +
+            encodeURIComponent(projectId) +
+            '/pages/' +
+            encodeURIComponent(pageId) +
+            '/content',
+        ),
       ]);
 
-      if (projectResponse.status === 404) {
+      if (projectResponse.status === 404 || contentResponse.status === 404) {
         setProject(null);
         setContent(null);
         setNotFound(true);
         return;
       }
-
       if (!projectResponse.ok || !contentResponse.ok) {
         throw new Error('fetch failed');
       }
 
       const metadata = (await projectResponse.json()) as ProjectMetadata;
-      const loadedContent = (await contentResponse.json()) as Content;
+      const contentPayload = (await contentResponse.json()) as { content?: Content };
+      if (!contentPayload.content) {
+        throw new Error('page content missing');
+      }
 
       setProject(metadata);
-      setContent(loadedContent);
+      setContent(contentPayload.content);
       setHasUnsavedChanges(false);
       setLastSavedAt(metadata.updatedAt);
       setPreviewRefreshSignal((current) => current + 1);
     } catch {
       toast({
         title: 'Erro',
-        description: 'Não foi possível carregar o cliente no builder.',
+        description: 'Não foi possível carregar a página no builder.',
         variant: 'destructive',
       });
       setProject(null);
@@ -332,7 +418,7 @@ export default function StudioProjectShell() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, toast]);
+  }, [pageId, projectId, toast]);
 
   const loadPublishConfig = useCallback(async () => {
     if (!projectId) {
@@ -415,6 +501,10 @@ export default function StudioProjectShell() {
   }, [loadProjects]);
 
   useEffect(() => {
+    void loadPages();
+  }, [loadPages]);
+
+  useEffect(() => {
     void loadProjectWorkspace();
   }, [loadProjectWorkspace]);
 
@@ -426,12 +516,230 @@ export default function StudioProjectShell() {
     void loadPublishConfig();
   }, [loadPublishConfig]);
 
+  const navigateToPage = useCallback(
+    (targetPageId: string) => {
+      if (!projectId || !targetPageId) {
+        return;
+      }
+      navigate(
+        '/cliente/' +
+          encodeURIComponent(projectId) +
+          '/pagina/' +
+          encodeURIComponent(targetPageId),
+      );
+    },
+    [navigate, projectId],
+  );
+
   const handleProjectChange = (nextProjectId: string) => {
     const normalized = nextProjectId.trim();
-    if (!normalized || normalized === projectId) {
+    if (!normalized || normalized === projectId) return;
+    if (hasUnsavedChanges) {
+      setPendingNavigation({ type: 'project', projectId: normalized });
       return;
     }
-    navigate(`/cliente/${encodeURIComponent(normalized)}`);
+    navigate('/cliente/' + encodeURIComponent(normalized));
+  };
+
+  const handlePageChange = (nextPageId: string) => {
+    const normalized = nextPageId.trim();
+    if (!normalized || normalized === pageId) return;
+    if (hasUnsavedChanges) {
+      setPendingNavigation({ type: 'page', pageId: normalized });
+      return;
+    }
+    navigateToPage(normalized);
+  };
+
+  const confirmPendingNavigation = () => {
+    const pending = pendingNavigation;
+    setPendingNavigation(null);
+    if (!pending) return;
+    setHasUnsavedChanges(false);
+    if (pending.type === 'page') navigateToPage(pending.pageId);
+    else navigate('/cliente/' + encodeURIComponent(pending.projectId));
+  };
+
+  const handleCreatePage = async (input: {
+    name: string;
+    layoutId: string;
+    publicPath: string;
+  }) => {
+    if (!projectId) {
+      return;
+    }
+    setCreatingPage(true);
+    try {
+      const response = await fetch('/api/clients/' + encodeURIComponent(projectId) + '/pages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getErrorMessage(payload, 'Não foi possível criar a página.'));
+      }
+      const created = payload as StudioPageMetadata;
+      setCreatePageOpen(false);
+      await loadPages();
+      navigateToPage(created.pageId);
+      toast({ title: 'Página criada', description: created.name });
+    } catch (error) {
+      toast({
+        title: 'Erro ao criar página',
+        description: error instanceof Error ? error.message : 'Falha ao criar página.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCreatingPage(false);
+    }
+  };
+
+  const handleDuplicatePage = async () => {
+    if (!projectId || !pageId || !currentPage) {
+      return;
+    }
+    const suggestedPath =
+      (currentPage.publicPath === '/' ? '/pagina' : currentPage.publicPath) + '-copia';
+    try {
+      const response = await fetch(
+        '/api/clients/' +
+          encodeURIComponent(projectId) +
+          '/pages/' +
+          encodeURIComponent(pageId) +
+          '/duplicate',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: currentPage.name + ' cópia',
+            publicPath: suggestedPath,
+          }),
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getErrorMessage(payload, 'Falha ao duplicar página.'));
+      }
+      const created = payload as StudioPageMetadata;
+      await loadPages();
+      navigateToPage(created.pageId);
+      toast({ title: 'Página duplicada', description: created.name });
+    } catch (error) {
+      toast({
+        title: 'Erro ao duplicar página',
+        description: error instanceof Error ? error.message : 'Falha ao duplicar página.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleArchivePage = async () => {
+    if (!projectId || !pageId || !currentPage || currentPage.isDefault) {
+      return;
+    }
+    try {
+      const response = await fetch(
+        '/api/clients/' +
+          encodeURIComponent(projectId) +
+          '/pages/' +
+          encodeURIComponent(pageId) +
+          '/archive',
+        { method: 'POST' },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getErrorMessage(payload, 'Falha ao arquivar página.'));
+      }
+      const target =
+        pages.find((entry) => entry.pageId !== pageId && entry.isDefault) ??
+        pages.find((entry) => entry.pageId !== pageId && entry.status !== 'archived');
+      await loadPages();
+      if (target) {
+        navigateToPage(target.pageId);
+      }
+      toast({ title: 'Página arquivada', description: currentPage.name });
+    } catch (error) {
+      toast({
+        title: 'Erro ao arquivar página',
+        description: error instanceof Error ? error.message : 'Falha ao arquivar página.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleSetDefaultPage = async () => {
+    if (!projectId || !pageId || currentPage?.isDefault) {
+      return;
+    }
+    try {
+      const response = await fetch(
+        '/api/clients/' +
+          encodeURIComponent(projectId) +
+          '/pages/' +
+          encodeURIComponent(pageId),
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isDefault: true }),
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getErrorMessage(payload, 'Falha ao definir página padrão.'));
+      }
+      await loadPages();
+      toast({ title: 'Página padrão atualizada', description: currentPage?.name });
+    } catch (error) {
+      toast({
+        title: 'Erro ao definir página padrão',
+        description: error instanceof Error ? error.message : 'Falha ao definir página padrão.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleLayoutChange = (layoutId: string) => {
+    if (!layoutId || layoutId === currentPage?.layoutId) {
+      return;
+    }
+    setPendingLayoutId(layoutId);
+  };
+
+  const handleConfirmLayoutChange = async () => {
+    if (!projectId || !pageId || !pendingLayoutId) {
+      return;
+    }
+    setChangingLayout(true);
+    try {
+      const response = await fetch(
+        '/api/clients/' +
+          encodeURIComponent(projectId) +
+          '/pages/' +
+          encodeURIComponent(pageId) +
+          '/layout',
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ layoutId: pendingLayoutId }),
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(getErrorMessage(payload, 'Falha ao trocar layout.'));
+      }
+      setPendingLayoutId(null);
+      await Promise.all([loadPages(), loadProjectWorkspace(), loadVersions()]);
+      toast({ title: 'Layout atualizado' });
+    } catch (error) {
+      toast({
+        title: 'Erro ao trocar layout',
+        description: error instanceof Error ? error.message : 'Falha ao trocar layout.',
+        variant: 'destructive',
+      });
+    } finally {
+      setChangingLayout(false);
+    }
   };
 
   const handleContentChange = (updater: (current: Content) => Content) => {
@@ -458,21 +766,28 @@ export default function StudioProjectShell() {
   );
 
   const handleSave = useCallback(async () => {
-    if (!content || !projectId) {
+    if (!content || !projectId || !pageId) {
       return;
     }
 
     setSaving(true);
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/content`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(content, null, 2),
-      });
+      const response = await fetch(
+        '/api/clients/' +
+          encodeURIComponent(projectId) +
+          '/pages/' +
+          encodeURIComponent(pageId) +
+          '/content',
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(content, null, 2),
+        },
+      );
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(getErrorMessage(payload, 'Falha ao salvar conteúdo.'));
+        throw new Error(getErrorMessage(payload, 'Falha ao salvar conteúdo da página.'));
       }
 
       const now = new Date().toISOString();
@@ -481,12 +796,12 @@ export default function StudioProjectShell() {
       setPreviewRefreshSignal((current) => current + 1);
       void loadVersions();
       toast({
-        title: 'Cliente salvo',
-        description: `Alterações do cliente ${projectId} persistidas com sucesso.`,
+        title: 'Página salva',
+        description: 'Alterações de ' + (currentPage?.name ?? pageId) + ' persistidas com sucesso.',
       });
     } catch (error) {
       const description =
-        error instanceof Error && error.message ? error.message : 'Não foi possível salvar o cliente.';
+        error instanceof Error && error.message ? error.message : 'Não foi possível salvar a página.';
       toast({
         title: 'Erro ao salvar',
         description,
@@ -495,20 +810,26 @@ export default function StudioProjectShell() {
     } finally {
       setSaving(false);
     }
-  }, [content, loadVersions, projectId, toast]);
+  }, [content, currentPage?.name, loadVersions, pageId, projectId, toast]);
 
   const handleUploadImage = async (file: File): Promise<string> => {
-    if (!projectId) {
-      throw new Error('Cliente inválido');
+    if (!projectId || !pageId) {
+      throw new Error('Página inválida');
     }
 
     const formData = new FormData();
     formData.append('image', file);
 
-    const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/upload-image`, {
-      method: 'POST',
-      body: formData,
-    });
+    const response = await fetch(
+      '/api/projects/' +
+        encodeURIComponent(projectId) +
+        '/upload-image?pageId=' +
+        encodeURIComponent(pageId),
+      {
+        method: 'POST',
+        body: formData,
+      },
+    );
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -659,18 +980,23 @@ export default function StudioProjectShell() {
   };
 
   const handleExportZip = useCallback(async () => {
-    if (!projectId) {
+    if (!projectId || !pageId) {
       return;
     }
 
     setExportingZip(true);
     try {
-      const response = await fetch(`/api/clients/${encodeURIComponent(projectId)}/export-zip`, {
-        method: 'POST',
-      });
+      const response = await fetch(
+        '/api/clients/' +
+          encodeURIComponent(projectId) +
+          '/pages/' +
+          encodeURIComponent(pageId) +
+          '/export-zip',
+        { method: 'POST' },
+      );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(getErrorMessage(payload, 'Não foi possível exportar ZIP do cliente.'));
+        throw new Error(getErrorMessage(payload, 'Não foi possível exportar ZIP da página.'));
       }
 
       const zipInfo = (payload as { zip?: { downloadUrl?: unknown } }).zip;
@@ -678,8 +1004,7 @@ export default function StudioProjectShell() {
         typeof zipInfo?.downloadUrl === 'string' && zipInfo.downloadUrl.trim()
           ? zipInfo.downloadUrl
           : null;
-
-      if (typeof downloadUrlRaw !== 'string' || !downloadUrlRaw.trim()) {
+      if (!downloadUrlRaw) {
         throw new Error('Exportação concluída sem URL de download no payload.');
       }
 
@@ -692,22 +1017,21 @@ export default function StudioProjectShell() {
 
       toast({
         title: 'ZIP exportado',
-        description: `O download do cliente ${projectId} foi iniciado.`,
+        description: 'O download da página ' + (currentPage?.name ?? pageId) + ' foi iniciado.',
       });
     } catch (error) {
-      const description =
-        error instanceof Error && error.message
-          ? error.message
-          : 'Não foi possível exportar o ZIP do cliente.';
       toast({
         title: 'Erro ao exportar',
-        description,
+        description:
+          error instanceof Error && error.message
+            ? error.message
+            : 'Não foi possível exportar o ZIP da página.',
         variant: 'destructive',
       });
     } finally {
       setExportingZip(false);
     }
-  }, [projectId, toast]);
+  }, [currentPage?.name, pageId, projectId, toast]);
 
   const executeTestPublishConnection = useCallback(
     async (payload: PublishPayload) => {
@@ -757,20 +1081,27 @@ export default function StudioProjectShell() {
 
   const executePublish = useCallback(
     async (payload?: PublishPayload) => {
-      if (!projectId) {
+      if (!projectId || !pageId) {
         return;
       }
 
       setPublishing(true);
       try {
-        const response = await fetch(`/api/clients/${encodeURIComponent(projectId)}/publish`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          ...(payload ? { body: JSON.stringify(payload) } : {}),
-        });
+        const response = await fetch(
+          '/api/clients/' +
+            encodeURIComponent(projectId) +
+            '/pages/' +
+            encodeURIComponent(pageId) +
+            '/publish',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            ...(payload ? { body: JSON.stringify(payload) } : {}),
+          },
+        );
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(getErrorMessage(result, 'Não foi possível publicar o cliente.'));
+          throw new Error(getErrorMessage(result, 'Não foi possível publicar a página.'));
         }
 
         const publicationMessage =
@@ -782,24 +1113,24 @@ export default function StudioProjectShell() {
           'message' in result.publication &&
           typeof result.publication.message === 'string'
             ? result.publication.message
-            : `Publicação do cliente ${projectId} concluída.`;
+            : 'Publicação da página ' + (currentPage?.name ?? pageId) + ' concluída.';
 
         toast({
-          title: 'Cliente publicado',
+          title: 'Página publicada',
           description: publicationMessage,
         });
         setPublishOpen(false);
       } catch (error) {
         toast({
           title: 'Falha na publicação',
-          description: error instanceof Error ? error.message : 'Não foi possível publicar o cliente.',
+          description: error instanceof Error ? error.message : 'Não foi possível publicar a página.',
           variant: 'destructive',
         });
       } finally {
         setPublishing(false);
       }
     },
-    [projectId, toast],
+    [currentPage?.name, pageId, projectId, toast],
   );
 
   const handleTestPublishConnection = useCallback(async () => {
@@ -899,7 +1230,7 @@ export default function StudioProjectShell() {
   }, [projectId, publishForm, toast]);
 
   const handleTopbarPublish = useCallback(async () => {
-    if (!projectId) {
+    if (!projectId || !pageId) {
       return;
     }
     if (loadingPublishConfig || publishing || testingPublishConnection) {
@@ -916,6 +1247,7 @@ export default function StudioProjectShell() {
     executePublish,
     loadingPublishConfig,
     publishing,
+    pageId,
     projectId,
     savedPublishConfig,
     testingPublishConnection,
@@ -923,12 +1255,12 @@ export default function StudioProjectShell() {
 
   const handleRestoreVersion = useCallback(
     async (versionId: string) => {
-      if (!projectId) {
+      if (!projectId || !pageId) {
         return;
       }
 
       const confirmed = window.confirm(
-        'Recuperar esta versão vai substituir o conteúdo atual do cliente. Deseja continuar?',
+        'Recuperar esta versão vai substituir o conteúdo atual da página. Deseja continuar?',
       );
       if (!confirmed) {
         return;
@@ -937,17 +1269,25 @@ export default function StudioProjectShell() {
       setRestoringVersionId(versionId);
       try {
         const response = await fetch(
-          `/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(versionId)}/restore`,
-          {
-            method: 'POST',
-          },
+          '/api/clients/' +
+            encodeURIComponent(projectId) +
+            '/pages/' +
+            encodeURIComponent(pageId) +
+            '/versions/' +
+            encodeURIComponent(versionId) +
+            '/restore',
+          { method: 'POST' },
         );
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(getErrorMessage(payload, 'Não foi possível recuperar a versão.'));
         }
+        const restoredContent = (payload as { content?: Content }).content;
+        if (!restoredContent) {
+          throw new Error('A versão restaurada não retornou conteúdo.');
+        }
 
-        setContent(payload as Content);
+        setContent(restoredContent);
         setHasUnsavedChanges(false);
         setLastSavedAt(new Date().toISOString());
         setPreviewRefreshSignal((current) => current + 1);
@@ -955,23 +1295,22 @@ export default function StudioProjectShell() {
         void loadVersions();
         toast({
           title: 'Versão recuperada',
-          description: `A edição agora está baseada na versão ${versionId}.`,
+          description: 'A página agora está baseada na versão ' + versionId + '.',
         });
       } catch (error) {
-        const description =
-          error instanceof Error && error.message
-            ? error.message
-            : 'Não foi possível recuperar a versão.';
         toast({
           title: 'Erro ao recuperar',
-          description,
+          description:
+            error instanceof Error && error.message
+              ? error.message
+              : 'Não foi possível recuperar a versão.',
           variant: 'destructive',
         });
       } finally {
         setRestoringVersionId(null);
       }
     },
-    [loadVersions, projectId, toast],
+    [loadVersions, pageId, projectId, toast],
   );
 
   const bumpEditorScrollToTop = useCallback(() => {
@@ -1066,6 +1405,10 @@ export default function StudioProjectShell() {
         projects={projects}
         contentGlobalLogo={content.global.logo}
         currentProjectId={project.projectId}
+        pages={pages}
+        layouts={layouts}
+        currentPageId={pageId}
+        loadingPages={loadingPages}
         loadingProjects={loadingProjects}
         saving={saving}
         exportingZip={exportingZip}
@@ -1073,6 +1416,12 @@ export default function StudioProjectShell() {
         hasUnsavedChanges={hasUnsavedChanges}
         lastSavedAt={lastSavedAt}
         onProjectChange={handleProjectChange}
+        onPageChange={handlePageChange}
+        onOpenCreatePage={() => setCreatePageOpen(true)}
+        onDuplicatePage={() => void handleDuplicatePage()}
+        onArchivePage={() => void handleArchivePage()}
+        onSetDefaultPage={() => void handleSetDefaultPage()}
+        onLayoutChange={handleLayoutChange}
         onSave={() => void handleSave()}
         onExportZip={() => void handleExportZip()}
         onOpenPublish={() => void handleTopbarPublish()}
@@ -1194,6 +1543,7 @@ export default function StudioProjectShell() {
                     <ClientTemplateVariablesPanel
                       yearsInMarket={content.global.yearsInMarket ?? ''}
                       projectCount={content.global.projectCount ?? ''}
+                      prefix={content.global.prefix ?? ''}
                       onYearsInMarketChange={(value) =>
                         handleContentChange((current) => ({
                           ...current,
@@ -1209,6 +1559,15 @@ export default function StudioProjectShell() {
                           global: {
                             ...current.global,
                             projectCount: value,
+                          },
+                        }))
+                      }
+                      onPrefixChange={(value) =>
+                        handleContentChange((current) => ({
+                          ...current,
+                          global: {
+                            ...current.global,
+                            prefix: value,
                           },
                         }))
                       }
@@ -1685,6 +2044,7 @@ export default function StudioProjectShell() {
           <div className="order-1 min-h-0 min-w-0 flex-1 lg:order-2">
             <BuilderPreviewPane
               projectId={project.projectId}
+              pageId={pageId}
               content={content}
               activeSectionId={activeSectionId}
               refreshSignal={previewRefreshSignal}
@@ -1693,6 +2053,59 @@ export default function StudioProjectShell() {
           </div>
         </div>
       </main>
+
+      <Dialog
+        open={Boolean(pendingNavigation)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingNavigation(null);
+          }
+        }}
+      >
+        <DialogContent className="border-[var(--builder-border)] bg-[#0f172a] text-[var(--builder-text-primary)] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="builder-heading text-xl">Alterações não salvas</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[var(--builder-text-secondary)]">
+            Você possui alterações não salvas. Deseja sair desta página?
+          </p>
+          <DialogFooter>
+            <button
+              type="button"
+              className={builderSecondaryButtonClassName}
+              onClick={() => setPendingNavigation(null)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className={builderPrimaryButtonClassName}
+              onClick={confirmPendingNavigation}
+            >
+              Sair sem salvar
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <CreatePageDialog
+        open={createPageOpen}
+        onOpenChange={setCreatePageOpen}
+        layouts={layouts}
+        creating={creatingPage}
+        onCreate={handleCreatePage}
+      />
+
+      <ChangeLayoutDialog
+        open={Boolean(pendingLayoutId)}
+        onOpenChange={(open) => {
+          if (!open && !changingLayout) {
+            setPendingLayoutId(null);
+          }
+        }}
+        onConfirm={() => void handleConfirmLayoutChange()}
+        changing={changingLayout}
+      />
 
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
         <DialogContent className="border-[var(--builder-border)] bg-[#0f172a] text-[var(--builder-text-primary)] sm:max-w-md">

@@ -7,8 +7,10 @@ import {
 export type ClientTemplateVariablesPanelProps = {
   yearsInMarket: string;
   projectCount: string;
+  prefix: string;
   onYearsInMarketChange: (value: string) => void;
   onProjectCountChange: (value: string) => void;
+  onPrefixChange: (value: string) => void;
 };
 
 /**
@@ -17,8 +19,10 @@ export type ClientTemplateVariablesPanelProps = {
 export function ClientTemplateVariablesPanel({
   yearsInMarket,
   projectCount,
+  prefix,
   onYearsInMarketChange,
   onProjectCountChange,
+  onPrefixChange,
 }: ClientTemplateVariablesPanelProps) {
   return (
     <>
@@ -59,6 +63,17 @@ export function ClientTemplateVariablesPanel({
           placeholder="Ex.: 1200"
           inputMode="numeric"
         />
+      </div>
+
+      <div className="space-y-1.5">
+        <p className={builderLabelClassName}>Prefixo</p>
+        <input
+          className={builderInputClassName}
+          value={prefix}
+          onChange={(event) => onPrefixChange(event.target.value)}
+          placeholder="Não configurado"
+        />
+        <p className={builderHintClassName}>Usado em {'{{prefix}}'}; o sistema não inventa valor quando estiver vazio.</p>
       </div>
     </>
   );

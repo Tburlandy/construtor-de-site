@@ -114,6 +114,8 @@ export const ContentSchema = z.object({
     logo: z.string().optional(),
     city: z.string(),
     whatsappE164: z.string(),
+    whatsappDigits: z.string().optional(),
+    businessPhone: z.string().optional(),
     cnpj: z.string(),
     address: z.string(),
     siteUrl: z.string(),
@@ -128,6 +130,8 @@ export const ContentSchema = z.object({
     yearsInMarket: z.string().optional(),
     /** Placeholder `{{projectCount}}` — estado do cliente / interpolação do template. */
     projectCount: z.string().optional(),
+    /** Prefixo configurável do cliente; vazio quando não configurado. */
+    prefix: z.string().optional(),
   }),
   seo: z.object({
     title: z.string(),
