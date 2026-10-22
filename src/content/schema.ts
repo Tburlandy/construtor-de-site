@@ -1,5 +1,24 @@
 import { z } from 'zod';
 
+type JsonData =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonData[]
+  | { [key: string]: JsonData };
+
+const JsonDataSchema: z.ZodType<JsonData> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(JsonDataSchema),
+    z.record(z.string(), JsonDataSchema),
+  ]),
+);
+
 // Schema para benefícios
 const BenefitSchema = z.object({
   icon: z.string(),
@@ -132,14 +151,14 @@ export const ContentSchema = z.object({
     projectCount: z.string().optional(),
     /** Prefixo configurável do cliente; vazio quando não configurado. */
     prefix: z.string().optional(),
-  }),
+  }).catchall(JsonDataSchema),
   seo: z.object({
     title: z.string(),
     description: z.string(),
     canonical: z.string(),
     ogImage: z.string(),
     jsonLd: z.any(), // LocalBusiness schema
-  }),
+  }).catchall(JsonDataSchema),
   hero: z.object({
     headline: z.string(),
     subheadline: z.string(),
@@ -216,7 +235,7 @@ export const ContentSchema = z.object({
     .optional(),
   imageLayout: ImageLayoutSchema.optional(),
   hiddenPageSections: z.array(HiddenPageSectionIdSchema).optional(),
-});
+}).catchall(JsonDataSchema);
 
 export type Content = z.infer<typeof ContentSchema>;
 export type Benefit = z.infer<typeof BenefitSchema>;

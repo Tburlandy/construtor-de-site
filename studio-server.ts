@@ -60,6 +60,7 @@ import {
   SUPPORTED_TEMPLATE_VARIABLE_KEYS,
   type TemplateVariableMap,
 } from './src/lib/templateVariables.js';
+import { normalizeLegacyRichMediaForRenderer } from './src/lib/legacyContentCompatibility.js';
 import {
   buildProjectContentRecord,
   parseGlobalSiteContentJson,
@@ -291,9 +292,17 @@ async function applyProjectSeoConfigToContent(projectId: ProjectId, content: Con
   };
 }
 
-/** Conteúdo persistido em `content.json` + overlay de `seo.json` (sem herança). */
+/** Conteúdo legado resolve para a página default quando ela existe; fallback para storage legado. */
 async function loadProjectScopedContent(projectIdRaw: string): Promise<Content> {
   const projectId = parseProjectIdOrThrow(projectIdRaw);
+  const defaultPage = (await pageMetadataRepository.listByClientId(projectId)).find(
+    (page) => page.isDefault,
+  );
+  if (defaultPage) {
+    const resolved = await pagesService.resolvePageContent(projectId, defaultPage.pageId);
+    return ContentSchema.parse(resolved);
+  }
+
   const contentRecord = await projectContentRepository.getByProjectId(projectId);
   const content = contentRecord ? siteContentFromRecord(contentRecord) : await readLegacyContent();
   return applyProjectSeoConfigToContent(projectId, content);
@@ -309,7 +318,7 @@ export type ProjectContentInheritanceMeta =
     }
   | {
       mode: 'legacy';
-      reason: 'no_template_state' | 'state_project_mismatch' | 'unsupported_style_id';
+      reason: 'default_page_bridge' | 'no_template_state' | 'state_project_mismatch' | 'unsupported_style_id';
     };
 
 /**
@@ -321,8 +330,19 @@ async function loadProjectContentForHttpGet(
   options?: { includeInheritanceMeta?: boolean },
 ): Promise<{ content: Content; inheritanceMeta?: ProjectContentInheritanceMeta }> {
   const projectId = parseProjectIdOrThrow(projectIdRaw);
-  const state = await studioClientTemplateStateRepository.getByProjectId(projectId);
   const wantMeta = options?.includeInheritanceMeta === true;
+  const defaultPage = (await pageMetadataRepository.listByClientId(projectId)).find(
+    (page) => page.isDefault,
+  );
+  if (defaultPage) {
+    const content = await loadProjectScopedContent(projectId);
+    return {
+      content,
+      inheritanceMeta: wantMeta ? { mode: 'legacy', reason: 'default_page_bridge' } : undefined,
+    };
+  }
+
+  const state = await studioClientTemplateStateRepository.getByProjectId(projectId);
 
   if (!state) {
     const content = await loadProjectScopedContent(projectIdRaw);
@@ -512,7 +532,20 @@ async function saveProjectScopedContent(
   options?: { skipVersionSnapshot?: boolean },
 ): Promise<Content> {
   const projectId = parseProjectIdOrThrow(projectIdRaw);
-  const parsed = ContentSchema.parse(payload);
+  const parsed = ContentSchema.parse(normalizeLegacyRichMediaForRenderer(payload));
+  const defaultPage = (await pageMetadataRepository.listByClientId(projectId)).find(
+    (page) => page.isDefault,
+  );
+
+  if (defaultPage) {
+    await pagesService.savePageContent(projectId, defaultPage.pageId, payload, {
+      skipSnapshot: options?.skipVersionSnapshot,
+    });
+    await persistClientTemplateStateFromPut(projectId, parsed);
+    const resolved = await pagesService.resolvePageContent(projectId, defaultPage.pageId);
+    return ContentSchema.parse(resolved);
+  }
+
   if (!options?.skipVersionSnapshot) {
     const { content: previousResolved } = await loadProjectContentForHttpGet(projectIdRaw);
     await projectVersionRepository.createSnapshot({
@@ -532,37 +565,6 @@ async function saveProjectScopedContent(
     }),
   );
   await persistClientTemplateStateFromPut(projectId, parsed);
-  const defaultPage = (await pageMetadataRepository.listByClientId(projectId)).find(
-    (page) => page.isDefault,
-  );
-  if (defaultPage) {
-    const previousPageContent = await pageContentRepository.getByPageId(projectId, defaultPage.pageId);
-    if (previousPageContent) {
-      await pageVersionRepository.createSnapshot(projectId, {
-        pageId: defaultPage.pageId,
-        content: previousPageContent.content,
-      });
-    }
-    const layout = await layoutRepository.getByLayoutId(defaultPage.layoutId);
-    const updatedAt = new Date().toISOString();
-    await pageContentRepository.save(projectId, {
-      pageId: defaultPage.pageId,
-      schemaVersion: layout?.schemaVersion,
-      content: parsed,
-      updatedAt,
-    });
-    const existingPageSeo = await pageSeoRepository.getByPageId(projectId, defaultPage.pageId);
-    await pageSeoRepository.save(projectId, {
-      pageId: defaultPage.pageId,
-      title: parsed.seo.title,
-      description: parsed.seo.description,
-      canonical: parsed.seo.canonical,
-      ogImage: parsed.seo.ogImage,
-      jsonLd: parsed.seo.jsonLd,
-      robotsDirective: existingPageSeo?.robotsDirective ?? 'index,follow',
-      updatedAt,
-    });
-  }
   return parsed;
 }
 
