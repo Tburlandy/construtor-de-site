@@ -5,12 +5,29 @@ export interface LayoutRepository {
   getByLayoutId(layoutId: string): Promise<StudioLayoutRecord | null>;
 }
 
-type LegacyBaseTemplateRepository = {
-  getByTemplateKey(templateKey: string): Promise<{ styleId: string; schemaVersion?: string; content: unknown; updatedAt: string } | null>;
-  ensureDefaultStyle1Exists(): Promise<{ styleId: string; schemaVersion?: string; content: unknown; updatedAt: string }>;
+type LegacyBaseTemplateRecord = {
+  styleId?: string;
+  schemaVersion?: string;
+  content?: unknown;
+  updatedAt?: string;
 };
 
-function toLayout(record: { styleId: string; schemaVersion?: string; content: unknown; updatedAt: string }): StudioLayoutRecord {
+type LegacyBaseTemplateRepository = {
+  getByTemplateKey(templateKey: string): Promise<LegacyBaseTemplateRecord | null>;
+  ensureDefaultStyle1Exists(): Promise<LegacyBaseTemplateRecord>;
+};
+
+function toLayout(record: LegacyBaseTemplateRecord): StudioLayoutRecord {
+  if (typeof record.styleId !== 'string' || record.styleId.length === 0) {
+    throw new Error('Layout base template is missing styleId');
+  }
+  if (typeof record.updatedAt !== 'string' || record.updatedAt.length === 0) {
+    throw new Error('Layout base template is missing updatedAt');
+  }
+  if (record.content == null || typeof record.content !== 'object' || Array.isArray(record.content)) {
+    throw new Error('Layout base template has invalid content');
+  }
+
   return {
     layoutId: record.styleId,
     name: record.styleId === 'style-1' ? 'Style 1' : record.styleId,
