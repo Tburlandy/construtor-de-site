@@ -7,6 +7,11 @@ import { studioPlugin } from "./vite-plugin-studio";
 const DEFAULT_BASE_PATH = "/pagina/";
 const DEFAULT_PROJECT_ID = "default";
 
+function isTrueFlag(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes";
+}
+
 function normalizeBasePath(rawPath: string | undefined): string {
   const trimmed = rawPath?.trim();
   if (!trimmed) {
@@ -46,7 +51,7 @@ function resolveProjectBasePath(mode: string, env: Record<string, string>): stri
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const projectId = (env.VITE_PROJECT_ID || env.PROJECT_ID || DEFAULT_PROJECT_ID).trim();
-  const studioEnabled = mode === 'development' || env.VITE_STUDIO_ENABLED === 'true';
+  const studioEnabled = mode === 'development' || isTrueFlag(env.VITE_STUDIO_ENABLED);
   const projectBasePath = resolveProjectBasePath(mode, env);
   const projectDomain = (env.VITE_PROJECT_DOMAIN || env.PROJECT_DOMAIN || "").trim();
 
