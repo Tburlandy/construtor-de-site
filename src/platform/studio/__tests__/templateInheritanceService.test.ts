@@ -105,6 +105,37 @@ describe('templateInheritanceService', () => {
       expect(content.global.brand).toBe('MarcaCliente');
     });
 
+    it('aplica override aninhado em mídia rica antes de normalizar para o renderer', () => {
+      const baseTemplate = baseRecord();
+      const richContent = structuredClone(baseTemplate.content) as Record<string, unknown>;
+      const richHero = richContent.hero as Record<string, unknown>;
+      richHero.background = {
+        originalUrl: 'https://cdn.example/hero-original.webp',
+        role: 'hero',
+        variants: {
+          fallback: {
+            url: 'https://cdn.example/hero-fallback.webp',
+            width: 1200,
+            height: 675,
+            format: 'webp',
+          },
+        },
+      };
+      baseTemplate.content = richContent as StudioBaseTemplateRecord['content'];
+
+      const { content } = resolveClientContent({
+        baseTemplate,
+        clientState: emptyClientState({
+          overrides: {
+            'hero.background.originalUrl': 'https://cdn.example/hero-client.webp',
+          },
+          overriddenPaths: ['hero.background.originalUrl'],
+        }),
+      });
+
+      expect(content.hero.background).toBe('https://cdn.example/hero-client.webp');
+    });
+
     it('interpolação: variáveis conhecidas substituídas no baseline', () => {
       const { inheritedBaseline } = resolveClientContent({
         baseTemplate: baseRecord(),

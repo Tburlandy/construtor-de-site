@@ -1,6 +1,7 @@
 import { ContentSchema, type Content } from '../../content/schema.js';
 import { getValueAtPath, listLeafPaths, setValueAtPath } from '../../lib/objectPaths.js';
 import { resolveTemplateVariablesInObject, type TemplateVariableMap } from '../../lib/templateVariables.js';
+import { normalizeLegacyRichMediaForRenderer } from '../../lib/legacyContentCompatibility.js';
 import type { ProjectId } from '../contracts/index.js';
 import type {
   StudioBaseTemplateRecord,
@@ -155,13 +156,21 @@ function isPathUnderCompositeChild(leaf: string, composites: readonly string[]):
   return false;
 }
 
+function buildInheritedBaselineRaw(
+  baseTemplate: StudioBaseTemplateRecord,
+  variables: TemplateVariableMap,
+): unknown {
+  const raw = clonePlain(baseTemplate.content);
+  return resolveTemplateVariablesInObject(raw, variables);
+}
+
 function buildInheritedBaselineContent(
   baseTemplate: StudioBaseTemplateRecord,
   variables: TemplateVariableMap,
 ): Content {
-  const raw = clonePlain(baseTemplate.content);
-  const interpolated = resolveTemplateVariablesInObject(raw, variables);
-  return ContentSchema.parse(interpolated);
+  return ContentSchema.parse(
+    normalizeLegacyRichMediaForRenderer(buildInheritedBaselineRaw(baseTemplate, variables)),
+  );
 }
 
 /**
@@ -169,9 +178,12 @@ function buildInheritedBaselineContent(
  */
 export function resolveClientContent(params: ResolveClientContentParams): ResolveClientContentResult {
   const { baseTemplate, clientState } = params;
-  const inheritedBaseline = buildInheritedBaselineContent(baseTemplate, clientState.variables);
+  const rawInheritedBaseline = buildInheritedBaselineRaw(baseTemplate, clientState.variables);
+  const inheritedBaseline = ContentSchema.parse(
+    normalizeLegacyRichMediaForRenderer(rawInheritedBaseline),
+  );
 
-  let merged: unknown = clonePlain(inheritedBaseline);
+  let merged: unknown = clonePlain(rawInheritedBaseline);
   const pathsToApply = [...clientState.overriddenPaths].sort();
   let applied = 0;
 
@@ -189,7 +201,7 @@ export function resolveClientContent(params: ResolveClientContentParams): Resolv
     applied += 1;
   }
 
-  const content = ContentSchema.parse(merged);
+  const content = ContentSchema.parse(normalizeLegacyRichMediaForRenderer(merged));
 
   return {
     content,

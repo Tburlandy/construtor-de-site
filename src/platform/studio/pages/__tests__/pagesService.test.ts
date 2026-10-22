@@ -135,7 +135,7 @@ function createHarness() {
     } as never,
   });
 
-  return { service, pages, contents, seo, versions, legacySnapshots };
+  return { service, pages, contents, seo, versions, projectContents, legacySnapshots };
 }
 
 describe('pages service', () => {
@@ -159,6 +159,51 @@ describe('pages service', () => {
         publicPath: '/fale-conosco-2',
       }),
     ).rejects.toBeInstanceOf(PageDomainError);
+  });
+
+  it('preserves rich media in storage while resolving URL strings for the renderer', async () => {
+    const { service, contents, projectContents } = createHarness();
+    const page = await service.createPage({
+      clientId: 'client-a',
+      name: 'Fale Conosco',
+      layoutId: 'style-1',
+      publicPath: '/',
+    });
+
+    await service.setDefaultPage('client-a', page.pageId);
+
+    const richPayload = structuredClone(BASE_CONTENT) as unknown as Record<string, unknown>;
+    const global = richPayload.global as Record<string, unknown>;
+    global.logo = {
+      originalUrl: 'https://cdn.example/logo-original.webp',
+      role: 'logo',
+      altPolicy: 'auto',
+      variants: {
+        fallback: {
+          url: 'https://cdn.example/logo-fallback.webp',
+          width: 300,
+          height: 100,
+          format: 'webp',
+        },
+      },
+    };
+    global.featureFlags = { trackingEnabled: true };
+
+    await service.savePageContent('client-a', page.pageId, richPayload);
+
+    const storedPage = contents.get(page.pageId)?.content as Record<string, unknown>;
+    const storedGlobal = storedPage.global as Record<string, unknown>;
+    expect(storedGlobal.logo).toEqual(global.logo);
+    expect(storedGlobal.featureFlags).toEqual({ trackingEnabled: true });
+
+    const storedLegacy = projectContents.get('client-a')?.content as Record<string, unknown>;
+    const storedLegacyGlobal = storedLegacy.global as Record<string, unknown>;
+    expect(storedLegacyGlobal.logo).toEqual(global.logo);
+
+    const resolved = await service.resolvePageContent('client-a', page.pageId);
+    const resolvedGlobal = resolved.global as Record<string, unknown>;
+    expect(resolvedGlobal.logo).toBe('https://cdn.example/logo-original.webp');
+    expect(resolvedGlobal.featureFlags).toEqual({ trackingEnabled: true });
   });
 
   it('maintains one default page and refuses to archive it', async () => {

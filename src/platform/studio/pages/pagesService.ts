@@ -9,7 +9,7 @@ import type { LayoutRepository } from '../../repositories/layoutRepository.js';
 import type { ProjectContentRepository } from '../../repositories/projectContentRepository.js';
 import type { ProjectSeoConfigRepository } from '../../repositories/projectSeoConfigRepository.js';
 import type { ProjectVersionRepository } from '../../repositories/projectVersionRepository.js';
-import { buildProjectContentRecord } from '../../repositories/projectSiteContentBridge.js';
+import type { JsonValue } from '../../contracts/index.js';
 import { buildProjectSeoConfig } from '../../repositories/projectSeoConfigBridge.js';
 import { ContentSchema } from '../../../content/schema.js';
 import type { StudioClientTemplateStateRepository } from '../../repositories/studioClientTemplateStateRepository.js';
@@ -26,6 +26,10 @@ import {
   collectTemplatePlaceholders,
   resolveTemplateVariablesInObject,
 } from '../../../lib/templateVariables.js';
+import {
+  mergeRendererPayloadIntoStoredContent,
+  normalizeLegacyRichMediaForRenderer,
+} from '../../../lib/legacyContentCompatibility.js';
 
 export class PageDomainError extends Error {
   constructor(public readonly statusCode:number,message:string,public readonly payload:Record<string,unknown>={}){super(message);this.name='PageDomainError';}
@@ -84,19 +88,18 @@ export function createPagesService(deps:PagesServiceDeps){
     if(pages.some(p=>p.pageId!==exceptPageId&&p.publicPath===normalized))throw new PageDomainError(409,'Já existe uma página com este path para o cliente');
     return normalized;
   }
-  async function syncLegacyDefaultContent(page:StudioPageMetadata,content:Record<string,unknown>,layout:StudioLayoutRecord){
+  async function syncLegacyDefaultContent(page:StudioPageMetadata,storageContent:Record<string,unknown>,layout:StudioLayoutRecord,options:{skipSnapshot?:boolean}={}){
     if(!page.isDefault || layout.rendererKey!=='style-1')return;
-    const parsed=ContentSchema.parse(content);
     const previous=await deps.projectContentRepository.getByProjectId(page.clientId);
-    if(previous){
+    if(previous&&!options.skipSnapshot){
       await deps.projectVersionRepository.createSnapshot({projectId:page.clientId,content:previous.content});
     }
-    await deps.projectContentRepository.save(buildProjectContentRecord({
+    await deps.projectContentRepository.save({
       projectId:page.clientId,
-      content:parsed,
+      content:storageContent as Record<string,JsonValue>,
       schemaVersion:layout.schemaVersion??previous?.schemaVersion,
       updatedAt:now(),
-    }));
+    });
   }
   async function syncLegacyDefaultSeo(page:StudioPageMetadata,seo:StudioPageSeoConfig){
     if(!page.isDefault)return;
@@ -111,8 +114,9 @@ export function createPagesService(deps:PagesServiceDeps){
     const stamp=now(); const page:StudioPageMetadata={pageId:'page-'+randomUUID(),clientId:input.clientId,name:input.name.trim(),slug:slugify(input.slug??input.name),publicPath,layoutId:layout.layoutId,status:'draft',isDefault:false,createdAt:stamp,updatedAt:stamp};
     if(!page.name)throw new PageDomainError(400,'Nome da página é obrigatório');
     await deps.pageMetadataRepository.save(page);
-    const content=validateLayoutContent(layout.rendererKey,layout.defaultContent);
-    await deps.pageContentRepository.save(input.clientId,{pageId:page.pageId,schemaVersion:layout.schemaVersion,content,updatedAt:stamp});
+    const content=validateLayoutContent(layout.rendererKey,normalizeLegacyRichMediaForRenderer(layout.defaultContent));
+    const storageContent=(mergeRendererPayloadIntoStoredContent({},layout.defaultContent)??layout.defaultContent) as Record<string,unknown>;
+    await deps.pageContentRepository.save(input.clientId,{pageId:page.pageId,schemaVersion:layout.schemaVersion,content:storageContent,updatedAt:stamp});
     await deps.pageSeoRepository.save(input.clientId,seoFromContent(page.pageId,content,page.publicPath));
     await deps.pageLayoutStateRepository.save(input.clientId,{pageId:page.pageId,layoutId:layout.layoutId,variables:{},overrides:{},overridePaths:[],schemaVersion:layout.schemaVersion,updatedAt:stamp});
     await deps.pageVersionRepository.createSnapshot(input.clientId,{pageId:page.pageId,content,createdAt:stamp});
@@ -142,14 +146,15 @@ export function createPagesService(deps:PagesServiceDeps){
     return page;
   }
   async function getPageContent(clientId:string,pageId:string){await assertPageBelongsToClient(clientId,pageId);return deps.pageContentRepository.getByPageId(clientId,pageId);}
-  async function savePageContent(clientId:string,pageId:string,payload:unknown,options:{skipSnapshot?:boolean}={}){
+  async function savePageContent(clientId:string,pageId:string,payload:unknown,options:{skipSnapshot?:boolean;skipLegacySync?:boolean}={}){
     const page=await assertPageBelongsToClient(clientId,pageId); const layout=await getLayout(page.layoutId);
-    const content=validateLayoutContent(layout.rendererKey,payload);
+    const content=validateLayoutContent(layout.rendererKey,normalizeLegacyRichMediaForRenderer(payload));
     const previous=await deps.pageContentRepository.getByPageId(clientId,pageId);
     if(previous&&!options.skipSnapshot)await deps.pageVersionRepository.createSnapshot(clientId,{pageId,content:previous.content});
-    const row:StudioPageContentRecord={pageId,schemaVersion:layout.schemaVersion,content,updatedAt:now()};
+    const storageContent=(mergeRendererPayloadIntoStoredContent(previous?.content??{},payload)??payload) as Record<string,unknown>;
+    const row:StudioPageContentRecord={pageId,schemaVersion:layout.schemaVersion,content:storageContent,updatedAt:now()};
     const saved=await deps.pageContentRepository.save(clientId,row);
-    await syncLegacyDefaultContent(page,content,layout);
+    if(!options.skipLegacySync)await syncLegacyDefaultContent(page,storageContent,layout,{skipSnapshot:options.skipSnapshot});
     if(layout.rendererKey==='style-1'){
       const style1Content=ContentSchema.parse(content);
       const existingSeo=await deps.pageSeoRepository.getByPageId(clientId,pageId);
@@ -198,10 +203,22 @@ export function createPagesService(deps:PagesServiceDeps){
   async function assignLayoutToPage(clientId:string,pageId:string,layoutId:string){
     const page=await assertPageBelongsToClient(clientId,pageId);const target=await getLayout(layoutId);const current=await deps.pageContentRepository.getByPageId(clientId,pageId);
     if(current)await deps.pageVersionRepository.createSnapshot(clientId,{pageId,content:current.content});
-    let nextContent=target.defaultContent;
-    if(current){try{nextContent=validateLayoutContent(target.rendererKey,current.content);}catch{nextContent=validateLayoutContent(target.rendererKey,target.defaultContent);}}
-    await deps.pageContentRepository.save(clientId,{pageId,schemaVersion:target.schemaVersion,content:nextContent,updatedAt:now()});
-    await syncLegacyDefaultContent(page,nextContent,target);
+    let nextContent:Record<string,unknown>;
+    let nextStorageContent:Record<string,unknown>;
+    if(current){
+      try{
+        nextContent=validateLayoutContent(target.rendererKey,normalizeLegacyRichMediaForRenderer(current.content));
+        nextStorageContent=current.content;
+      }catch{
+        nextContent=validateLayoutContent(target.rendererKey,normalizeLegacyRichMediaForRenderer(target.defaultContent));
+        nextStorageContent=(mergeRendererPayloadIntoStoredContent({},target.defaultContent)??target.defaultContent) as Record<string,unknown>;
+      }
+    }else{
+      nextContent=validateLayoutContent(target.rendererKey,normalizeLegacyRichMediaForRenderer(target.defaultContent));
+      nextStorageContent=(mergeRendererPayloadIntoStoredContent({},target.defaultContent)??target.defaultContent) as Record<string,unknown>;
+    }
+    await deps.pageContentRepository.save(clientId,{pageId,schemaVersion:target.schemaVersion,content:nextStorageContent,updatedAt:now()});
+    await syncLegacyDefaultContent(page,nextStorageContent,target);
     await deps.pageMetadataRepository.save({...page,layoutId:target.layoutId,updatedAt:now()});
     await deps.pageLayoutStateRepository.save(clientId,{pageId,layoutId:target.layoutId,variables:{},overrides:{},overridePaths:[],schemaVersion:target.schemaVersion,updatedAt:now()});
     return assertPageBelongsToClient(clientId,pageId);
@@ -210,7 +227,7 @@ export function createPagesService(deps:PagesServiceDeps){
   async function resolvePageContent(clientId:string,pageId:string){
     const page=await assertPageBelongsToClient(clientId,pageId);const layout=await getLayout(page.layoutId);const row=await deps.pageContentRepository.getByPageId(clientId,pageId);
     if(!row)throw new PageDomainError(404,'Conteúdo da página não encontrado');
-    const variables=await clientVariables(clientId);const validated=validateLayoutContent(layout.rendererKey,row.content);
+    const variables=await clientVariables(clientId);const validated=validateLayoutContent(layout.rendererKey,normalizeLegacyRichMediaForRenderer(row.content));
     const resolved=resolveTemplateVariablesInObject(validated,variables);
     if(layout.rendererKey!=='style-1')return resolved;
     const pageSeo=await deps.pageSeoRepository.getByPageId(clientId,pageId);

@@ -1,4 +1,5 @@
 import { ContentSchema, type Content } from '../../content/schema.js';
+import { normalizeLegacyRichMediaForRenderer } from '../../lib/legacyContentCompatibility.js';
 import {
   ProjectContentRecordSchema,
   type ProjectContentRecord,
@@ -29,10 +30,10 @@ export function buildProjectContentRecord(params: {
 
 /** Extrai e valida o `Content` embutido em um registro persistido. */
 export function siteContentFromRecord(record: ProjectContentRecord): Content {
-  return ContentSchema.parse(record.content);
+  return ContentSchema.parse(normalizeLegacyRichMediaForRenderer(record.content));
 }
 
 /** Interpreta o JSON no mesmo formato que `content/content.json` (sem envelope de projeto). */
 export function parseGlobalSiteContentJson(data: unknown): Content {
-  return ContentSchema.parse(data);
+  return ContentSchema.parse(normalizeLegacyRichMediaForRenderer(data));
 }
