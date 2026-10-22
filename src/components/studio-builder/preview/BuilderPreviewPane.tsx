@@ -7,6 +7,7 @@ import { builderSecondaryButtonClassName } from '../editors/BuilderEditorFields'
 
 interface BuilderPreviewPaneProps {
   projectId: string;
+  pageId?: string;
   content: Content;
   activeSectionId: BuilderSectionId;
   refreshSignal: number;
@@ -50,6 +51,7 @@ function postMessageToPreview(iframe: HTMLIFrameElement | null, payload: Preview
 
 export function BuilderPreviewPane({
   projectId,
+  pageId,
   content,
   activeSectionId,
   refreshSignal,
@@ -72,8 +74,10 @@ export function BuilderPreviewPane({
       const path = raw.startsWith('/') ? raw : `/${raw}`;
       return withBasePath(path);
     }
-    return withBasePath(`/preview/${encodeURIComponent(projectId)}`);
-  }, [previewPathOverride, projectId]);
+    return withBasePath(pageId
+      ? `/preview/${encodeURIComponent(projectId)}/${encodeURIComponent(pageId)}`
+      : `/preview/${encodeURIComponent(projectId)}`);
+  }, [pageId, previewPathOverride, projectId]);
 
   const iframeTitle = previewIframeTitle?.trim() || `Preview do cliente ${projectId}`;
 

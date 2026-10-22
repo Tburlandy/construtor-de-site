@@ -29,6 +29,23 @@ import {
   createStudioBaseTemplateRepository,
 } from './src/platform/repositories/studioBaseTemplateRepository.js';
 import { createStudioClientTemplateStateRepository } from './src/platform/repositories/studioClientTemplateStateRepository.js';
+import { createPageMetadataRepository } from './src/platform/repositories/pageMetadataRepository.js';
+import { createPageContentRepository } from './src/platform/repositories/pageContentRepository.js';
+import { createPageSeoRepository } from './src/platform/repositories/pageSeoRepository.js';
+import { createPageVersionRepository } from './src/platform/repositories/pageVersionRepository.js';
+import { createPageLayoutStateRepository } from './src/platform/repositories/pageLayoutStateRepository.js';
+import { createLegacyLayoutRepositoryAdapter } from './src/platform/repositories/layoutRepository.js';
+import {
+  createSupabasePageMetadataRepository,
+  createSupabasePageContentRepository,
+  createSupabasePageSeoRepository,
+  createSupabasePageVersionRepository,
+  createSupabasePageLayoutStateRepository,
+  createSupabaseLayoutRepository,
+} from './src/platform/repositories/supabasePageRepositories.js';
+import { createPagesService } from './src/platform/studio/pages/pagesService.js';
+import { createPagesRouter } from './src/platform/studio/pages/pageRoutes.js';
+import { exportPageZip } from './src/platform/studio/pages/pageDeliveryService.js';
 import {
   buildProjectContentRecord,
   parseGlobalSiteContentJson,
@@ -176,11 +193,30 @@ function getProjectMediaDirectory(
   mediaProjectsPath: string,
   projectId: ProjectId,
   mediaKind: 'img' | 'vid',
+  pageId?: string,
 ): string {
-  return path.join(mediaProjectsPath, projectId, mediaKind);
+  return pageId ? path.join(mediaProjectsPath, projectId, 'pages', pageId, mediaKind) : path.join(mediaProje...[truncated]+      const pageMetadataRepository = supabaseClient ? createSupabasePageMetadataRepository(supabaseClient) : createPageMetadataRepository({ projectsRootDir: projectsDataRoot });
+      const pageContentRepository = supabaseClient ? createSupabasePageContentRepository(supabaseClient) : createPageContentRepository({ projectsRootDir: projectsDataRoot });
+      const pageSeoRepository = supabaseClient ? createSupabasePageSeoRepository(supabaseClient) : createPageSeoRepository({ projectsRootDir: projectsDataRoot });
+      const pageVersionRepository = supabaseClient ? createSupabasePageVersionRepository(supabaseClient) : createPageVersionRepository({ projectsRootDir: projectsDataRoot });
+      const pageLayoutStateRepository = supabaseClient ? createSupabasePageLayoutStateRepository(supabaseClient) : createPageLayoutStateRepository({ projectsRootDir: projectsDataRoot });
+      const layoutRepository = supabaseClient ? createSupabaseLayoutRepository(supabaseClient) : createLegacyLayoutRepositoryAdapter(studioBaseTemplateRepository);
+      const pagesService = createPagesService({ pageMetadataRepository, pageContentRepository, pageSeoRepository, pageVersionRepository, pageLayoutStateRepository, layoutRepository, projectMetadataRepository, projectContentRepository, projectSeoConfigRepository, projectVersionRepository, studioClientTemplateStateRepository });
+      const pagesRouter = createPagesRouter(pagesService, {
+        exportPageZip: async (clientId, pageId) => exportPageZip({
+          clientId, pageId, pagesService, supabaseClient, exportsBucket: supabaseExportsBucket,
+        }),
+        publishPage: async (clientId, pageId, payload) => {
+          const projectId = parseProjectIdOrThrow(clientId);
+          const exported = await exportPageZip({
+            clientId, pageId, pagesService, supabaseClient, exportsBucket: supabaseExportsBucket,
+          });
+          const connection = await resolvePublishConnection({
+            projectId, projectsR...[truncated]@@ -259,6 +310,7 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
 }
 
 function getProjectMediaUrl(projectId: ProjectId, mediaKind: 'img' | 'vid', filename: string): string {
+        pageId?: string;
   return `/media/projects/${projectId}/${mediaKind}/${filename}`;
 }
 
@@ -268,7 +304,7 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
           throw new Error('Supabase Storage não configurado');
         }
 
-        const storagePath = `projects/${params.projectId}/${params.mediaKind}/${params.filename}`;
+        const storagePath = params.pageId ? `projects/${params.projectId}/pages/${params.pageId}/${params.mediaKind}/${params.filename}` : `projects/${params.projectId}/${params.mediaKind}/${params.filename}`;
         const { error } = await supabaseClient.storage
           .from(supabaseStorageBucket)
           .upload(storagePath, params.body, {
@@ -341,6 +377,24 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
             seo: content.seo,
           }),
         );
+        const defaultPage = (await pageMetadataRepository.listByClientId(projectId)).find((page) => page.isDefault);
+        if (defaultPage) {
+          const previousPageContent = await pageContentRepository.getByPageId(projectId, defaultPage.pageId);
+          if (previousPageContent) {
+            await pageVersionRepository.createSnapshot(projectId, {
+              pageId: defaultPage.pageId,
+              content: previousPageContent.content,
+            });
+          }
+          const layout = await layoutRepository.getByLayoutId(defaultPage.layoutId);
+          await pageContentRepository.save(projectId, {
+            pageId: defaultPage.pageId,
+            schemaVersion: layout?.schemaVersion,
+            content,
+            updatedAt: new Date().toISOString(),
+          });
+          await pageSeoRepository.save(projectId, {
+            pageId: defaultPage.page...[truncated]         }
         return content;
       };
 
@@ -1046,7 +1100,9 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
 
           if (req.method === 'POST' && segments.length === 2 && segments[1] === 'upload-image') {
             const projectId = parseProjectIdOrThrow(segments[0]);
-            const projectMediaImgPath = getProjectMediaDirectory(mediaProjectsPath, projectId, 'img');
+            const pageId = parsedRequestUrl.searchParams.get('pageId')?.trim() ?? '';
+            if (pageId) await pagesService.assertPageBelongsToClient(projectId, pageId);
+            const projectMediaImgPath = getProjectMediaDirectory(mediaProjectsPath, projectId, 'img', pageId);
             if (!hasSupabasePersistence) {
               await fs.mkdir(projectMediaImgPath, { recursive: true });
             }
@@ -1080,6 +1136,7 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
               if (hasSupabasePersistence) {
                 const uploadedUrl = await uploadProjectMediaToSupabase({
                   projectId,
+                  ...(pageId ? { pageId } : {}),
                   mediaKind: 'img',
                   filename,
                   body: optimizedBuffer,
@@ -1096,7 +1153,7 @@ export function studioPlugin(options?: { env?: Record<string, string> }): Plugin
               await fs.writeFile(outputPath, optimizedBuffer);
               return sendJson(200, {
                 projectId,
-                url: getProjectMediaUrl(projectId, 'img', filename),
+                url: getProjectMediaUrl(projectId, 'img', filename, pageId),
                 filename,
               });
             } catch (error) {

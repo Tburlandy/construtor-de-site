@@ -29,6 +29,23 @@ import {
   createStudioBaseTemplateRepository,
 } from './src/platform/repositories/studioBaseTemplateRepository.js';
 import { createStudioClientTemplateStateRepository } from './src/platform/repositories/studioClientTemplateStateRepository.js';
+import { createPageMetadataRepository } from './src/platform/repositories/pageMetadataRepository.js';
+import { createPageContentRepository } from './src/platform/repositories/pageContentRepository.js';
+import { createPageSeoRepository } from './src/platform/repositories/pageSeoRepository.js';
+import { createPageVersionRepository } from './src/platform/repositories/pageVersionRepository.js';
+import { createPageLayoutStateRepository } from './src/platform/repositories/pageLayoutStateRepository.js';
+import { createLegacyLayoutRepositoryAdapter } from './src/platform/repositories/layoutRepository.js';
+import {
+  createSupabasePageMetadataRepository,
+  createSupabasePageContentRepository,
+  createSupabasePageSeoRepository,
+  createSupabasePageVersionRepository,
+  createSupabasePageLayoutStateRepository,
+  createSupabaseLayoutRepository,
+} from './src/platform/repositories/supabasePageRepositories.js';
+import { createPagesService } from './src/platform/studio/pages/pagesService.js';
+import { createPagesRouter } from './src/platform/studio/pages/pageRoutes.js';
+import { exportPageZip } from './src/platform/studio/pages/pageDeliveryService.js';
 import {
   StudioTemplateContentPathSchema,
   type StudioClientTemplateStateRecord,
@@ -146,9 +163,41 @@ export const studioClientTemplateStateRepository = supabaseClient
       projectsRootDir: projectsDataRoot,
     });
 
+export const pageMetadataRepository = supabaseClient
+  ? createSupabasePageMetadataRepository(supabaseClient)
+  : createPageMetadataRepository({ projectsRootDir: projectsDataRoot });
+export const pageConte...[truncated]+  pageMetadataRepository, pageContentRepository, pageSeoRepository, pageVersionRepository,
+  pageLayoutStateRepository, layoutRepository, projectMetadataRepository, projectContentRepository,
+  projectSeoConfigRepository, projectVersionRepository, studioClientTemplateStateRepository,
+});
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
+app.use(createPagesRouter(pagesService, {
+  exportPageZip: async (clientId, pageId) => exportPageZip({
+    clientId, pageId, pagesService, supabaseClient, exportsBucket: supabaseExportsBucket,
+  }),
+  publishPage: async (clientId, pageId, payload) => {
+    const projectId = parseProjectIdOrThrow(clientId);
+    const exported = await exportPageZip({
+      clientId, pageId, pagesService, supabaseClient, exportsBucket: supabaseExportsBucket,
+    });
+    const connection = await resolvePublishConnection({
+      projectId, projectsRootDir: projectsDataRoot, payload,
+    });
+    const relativePagePath = exported.page.publicPath.replace(/^\/+|\/+$/g, '');
+    const baseRemotePath = (connection.remotePath ?? '').replace(/\/+$/g, '');
+    const remotePath = relativePagePath
+      ? [baseRemotePath, relativePagePath].filter(Boolean).join('/')
+      : connection.remotePath;
+    const publication = await publishProjectArtifact({
+      projectId, projectsRootDir: projectsDataRoot,
+      connection: { ...connection, artifactDirectory: exported.buildPath, remotePath },
+    });
+    return { pageId, publicPath: exported.page.publicPath, publication };
+  },
+}));
 
 // Configuração multer para uploads temporários
 const upload = multer({
@@ -443,19 +492,27 @@ async function saveProjectScopedContent(
     }),
   );
   await persistClientTemplateStateFromPut(projectId, parsed);
+  const defaultPage = (await pageMetadataRepository.listByClientId(projectId)).find((page) => page.isDefault);
+  if (defaultPage) {
+    const previousPageContent = await pageContentRepository.getBy...[truncated]@@ -461,16 +553,21 @@ function toProjectContentVersionSummary(params: {
   return parsed;
 }
 
-type ProjectContentVersionSummary = {
-  versionId: string;
+function getProjectMediaDirectory(projectId: ProjectId, mediaKind: 'img' | 'vid', pageId?: string): string {
+  return pageId
+    ? path.join(mediaProjectsPath, projectId, 'pages', pageId, mediaKind)
+    : path.join(mediaProjectsPath, projectId, mediaKind);
   createdAt: string;
 };
-
-function toProjectContentVersionSummary(params: {
+function getProjectMediaUrl(projectId: ProjectId, mediaKind: 'img' | 'vid', filename: string, pageId?: string): string {
+  return pageId
+    ? `/media/projects/${projectId}/pages/${encodeURIComponent(pageId)}/${mediaKind}/${filename}`
+    : `/media/projects/${projectId}/${mediaKind}/${filename}`;
   versionId: string;
   createdAt: string;
 }): ProjectContentVersionSummary {
   return {
+  pageId?: string;
     versionId: params.versionId,
     createdAt: params.createdAt,
   };
@@ -480,7 +537,9 @@ async function uploadProjectMediaToSupabase(params: {
     throw new Error('Supabase Storage não configurado');
   }
 
-  const storagePath = `projects/${params.projectId}/${params.mediaKind}/${params.filename}`;
+  const storagePath = params.pageId
+    ? `projects/${params.projectId}/pages/${params.pageId}/${params.mediaKind}/${params.filename}`
+    : `projects/${params.projectId}/${params.mediaKind}/${params.filename}`;
   const { error } = await supabaseClient.storage
     .from(supabaseStorageBucket)
     .upload(storagePath, params.body, {
@@ -1527,6 +1586,8 @@ app.post('/api/projects/:projectId/upload-image', upload.single('image'), async 
 
   try {
     const projectId = parseProjectIdOrThrow(req.params.projectId);
+    const pageId = typeof req.query.pageId === 'string' ? req.query.pageId.trim() : '';
+    if...[truncated]     const outputPath = path.join(projectMediaImgPath, filename);
     const filename = `${Date.now()}-${Math.random().toString(36).substring(7)}.webp`;
     const optimizedBuffer = await sharp(req.file.path)
       .webp({ quality: 75 })
@@ -1569,7 +1630,7 @@ app.post('/api/projects/:projectId/upload-image', upload.single('image'), async 
 
     res.json({
       projectId,
-      url: getProjectMediaUrl(projectId, 'img', filename),
+      url: getProjectMediaUrl(projectId, 'img', filename, pageId),
       filename,
     });
   } catch (error) {

@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Copy, LayoutTemplate, Plus, Save, UploadCloud, WandSparkles } from 'lucide-react';
+import { Archive, Copy, LayoutTemplate, Plus, Save, Star, UploadCloud, WandSparkles } from 'lucide-react';
 import type { ProjectListItemWithContentLogo, ProjectMetadata } from '@/platform/contracts';
+import type { StudioPageMetadata } from '@/platform/contracts/studioPages';
+import type { StudioLayoutRecord } from '@/platform/contracts/studioLayouts';
 import {
   FALLBACK_STUDIO_PROJECT_LOGO_URL,
   resolveStudioProjectLogoSrc,
 } from '@/lib/studioProjectLogo';
 import { cn } from '@/lib/utils';
 import { BuilderClientSwitcher } from './BuilderClientSwitcher';
+import { BuilderPageSwitcher } from './BuilderPageSwitcher';
+import { BuilderVariablesPopover } from './BuilderVariablesPopover';
+import { BuilderLayoutSelector } from './BuilderLayoutSelector';
 import {
   builderPrimaryButtonClassName,
   builderSecondaryButtonClassName,
@@ -19,6 +24,10 @@ interface BuilderTopbarProps {
   /** Logo do site (`content.global.logo`), alinhada ao preview e à listagem de clientes. */
   contentGlobalLogo?: string | null;
   currentProjectId: string;
+  pages: StudioPageMetadata[];
+  layouts: StudioLayoutRecord[];
+  currentPageId: string;
+  loadingPages: boolean;
   loadingProjects: boolean;
   saving: boolean;
   exportingZip: boolean;
@@ -26,6 +35,12 @@ interface BuilderTopbarProps {
   hasUnsavedChanges: boolean;
   lastSavedAt: string | null;
   onProjectChange: (projectId: string) => void;
+  onPageChange: (pageId: string) => void;
+  onOpenCreatePage: () => void;
+  onDuplicatePage: () => void;
+  onArchivePage: () => void;
+  onSetDefaultPage: () => void;
+  onLayoutChange: (layoutId: string) => void;
   onSave: () => void;
   onExportZip: () => void;
   onOpenPublish: () => void;
@@ -67,6 +82,10 @@ export function BuilderTopbar({
   projects,
   contentGlobalLogo,
   currentProjectId,
+  pages,
+  layouts,
+  currentPageId,
+  loadingPages,
   loadingProjects,
   saving,
   exportingZip,
@@ -74,6 +93,12 @@ export function BuilderTopbar({
   hasUnsavedChanges,
   lastSavedAt,
   onProjectChange,
+  onPageChange,
+  onOpenCreatePage,
+  onDuplicatePage,
+  onArchivePage,
+  onSetDefaultPage,
+  onLayoutChange,
   onSave,
   onExportZip,
   onOpenPublish,
@@ -136,6 +161,41 @@ export function BuilderTopbar({
             onSelect={onProjectChange}
           />
 
+          <BuilderPageSwitcher
+            pages={pages}
+            currentPageId={currentPageId}
+            loading={loadingPages}
+            onSelect={onPageChange}
+            onCreate={onOpenCreatePage}
+          />
+
+          <BuilderVariablesPopover clientId={currentProjectId} />
+
+          {pages.find((page) => page.pageId === currentPageId) ? (
+            <>
+              <div className="w-[140px]">
+                <BuilderLayoutSelector
+                  layouts={layouts}
+                  value={pages.find((page) => page.pageId === currentPageId)?.layoutId ?? ''}
+                  onChange={onLayoutChange}
+                />
+              </div>
+              <button type="button" className={builderSecondaryButtonClassName} onClick={onDuplicatePage} title="Duplicar página">
+                <Copy className="h-4 w-4" />
+              </button>
+              {!pages.find((page) => page.pageId === currentPageId)?.isDefault ? (
+                <>
+                  <button type="button" className={builderSecondaryButtonClassName} onClick={onSetDefaultPage} title="Tornar página padrão">
+                    <Star className="h-4 w-4" />
+                  </button>
+                  <button type="button" className={builderSecondaryButtonClassName} onClick={onArchivePage} title="Arquivar página">
+                    <Archive className="h-4 w-4" />
+                  </button>
+                </>
+              ) : null}
+            </>
+          ) : null}
+
           <button type="button" className={builderSecondaryButtonClassName} onClick={onOpenCreateProject}>
             <Plus className="h-4 w-4" />
             Novo cliente
@@ -182,14 +242,14 @@ export function BuilderTopbar({
           </button>
 
           <Link
-            to="/construtor/template-base/style-1"
+            to="/construtor/layouts"
             className={cn(
               builderSecondaryButtonClassName,
               'border-[rgba(245,158,11,0.35)] text-amber-100 no-underline',
             )}
           >
             <LayoutTemplate className="h-4 w-4" />
-            Template base
+            Layouts
           </Link>
         </div>
 
